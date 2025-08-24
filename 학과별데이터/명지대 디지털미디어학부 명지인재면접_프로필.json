@@ -1,0 +1,62 @@
+{
+  "department_name": "명지대 디지털미디어학부 명지인재면접",
+  "current_year_inputs": {
+    "capacity": 6,
+    "extra": 0,
+    "applicants": 0,
+    "ratio": 0.0
+  },
+  "historical_data": [
+    {
+      "year": 2023,
+      "best": 2.49,
+      "median": null,
+      "p70": "2.99",
+      "final_cut": 3.07,
+      "mean": 2.87,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 6,
+      "extra": 2,
+      "competition_ratio": 22.16
+    },
+    {
+      "year": 2024,
+      "best": 2.83,
+      "median": null,
+      "p70": "4.07",
+      "final_cut": 5.22,
+      "mean": 3.57,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 6,
+      "extra": 5,
+      "competition_ratio": 22.83
+    },
+    {
+      "year": 2025,
+      "best": 2.94,
+      "median": null,
+      "p70": "3.32",
+      "final_cut": 3.37,
+      "mean": 3.11,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 6,
+      "extra": 3,
+      "competition_ratio": 49.5
+    }
+  ]
+}

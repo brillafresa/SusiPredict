@@ -1,0 +1,62 @@
+{
+  "department_name": "가톨릭대 미디어기술콘텐츠학과 논술",
+  "current_year_inputs": {
+    "capacity": 4,
+    "extra": 0,
+    "applicants": 0,
+    "ratio": 0.0
+  },
+  "historical_data": [
+    {
+      "year": 2023,
+      "best": 3.59,
+      "median": null,
+      "p70": null,
+      "final_cut": 5.6,
+      "mean": 4.47,
+      "init_best": 3.59,
+      "init_worst": 5.6,
+      "init_mean": 4.71,
+      "app_best": 3.59,
+      "app_worst": 7.49,
+      "app_mean": 5.28,
+      "capacity": 4,
+      "extra": 1,
+      "competition_ratio": 20.25
+    },
+    {
+      "year": 2024,
+      "best": 3.43,
+      "median": null,
+      "p70": null,
+      "final_cut": 5.08,
+      "mean": 4.04,
+      "init_best": 3.43,
+      "init_worst": 4.04,
+      "init_mean": 5.08,
+      "app_best": 2.49,
+      "app_worst": 7.38,
+      "app_mean": 4.67,
+      "capacity": 3,
+      "extra": 0,
+      "competition_ratio": 27.0
+    },
+    {
+      "year": 2025,
+      "best": 2.44,
+      "median": null,
+      "p70": null,
+      "final_cut": 3.92,
+      "mean": 3.23,
+      "init_best": 2.44,
+      "init_worst": 3.92,
+      "init_mean": 3.23,
+      "app_best": 2.13,
+      "app_worst": 6.0,
+      "app_mean": 4.39,
+      "capacity": 3,
+      "extra": 0,
+      "competition_ratio": 24.67
+    }
+  ]
+}

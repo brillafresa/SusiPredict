@@ -1,0 +1,63 @@
+{
+  "department_name": "가톨릭대 미디어기술콘텐츠학과 가톨릭지도자추천",
+  "current_year_inputs": {
+    "capacity": 2,
+    "extra": 0,
+    "applicants": 0,
+    "ratio": 0.0,
+    "input_mode": "ratio"
+  },
+  "historical_data": [
+    {
+      "year": 2023,
+      "best": 3.08,
+      "median": null,
+      "p70": null,
+      "final_cut": 4.67,
+      "mean": 3.89,
+      "init_best": 3.08,
+      "init_worst": 3.91,
+      "init_mean": 3.57,
+      "app_best": 3.08,
+      "app_worst": 6.24,
+      "app_mean": 4.35,
+      "capacity": 3,
+      "extra": 1,
+      "competition_ratio": 10.33
+    },
+    {
+      "year": 2024,
+      "best": 3.41,
+      "median": null,
+      "p70": null,
+      "final_cut": 3.79,
+      "mean": 3.6,
+      "init_best": 3.79,
+      "init_worst": 4.14,
+      "init_mean": 3.96,
+      "app_best": 3.41,
+      "app_worst": 7.0,
+      "app_mean": 4.42,
+      "capacity": 2,
+      "extra": 2,
+      "competition_ratio": 10.0
+    },
+    {
+      "year": 2025,
+      "best": 3.8,
+      "median": null,
+      "p70": null,
+      "final_cut": 4.72,
+      "mean": 4.26,
+      "init_best": 3.8,
+      "init_worst": 4.72,
+      "init_mean": 4.26,
+      "app_best": 2.77,
+      "app_worst": 6.86,
+      "app_mean": 4.13,
+      "capacity": 2,
+      "extra": 0,
+      "competition_ratio": 15.0
+    }
+  ]
+}

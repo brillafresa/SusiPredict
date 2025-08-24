@@ -1,0 +1,62 @@
+{
+  "department_name": "서울여대 언론영상학부 바롬인재서류",
+  "current_year_inputs": {
+    "capacity": 7,
+    "extra": 0,
+    "applicants": 0,
+    "ratio": 0.0
+  },
+  "historical_data": [
+    {
+      "year": 2023,
+      "best": 2.1,
+      "median": null,
+      "p70": null,
+      "final_cut": 3.3,
+      "mean": 2.8,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 12,
+      "extra": 7,
+      "competition_ratio": 19.7
+    },
+    {
+      "year": 2024,
+      "best": 2.6,
+      "median": null,
+      "p70": null,
+      "final_cut": 3.4,
+      "mean": 2.9,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 12,
+      "extra": 7,
+      "competition_ratio": 9.6
+    },
+    {
+      "year": 2025,
+      "best": 2.2,
+      "median": null,
+      "p70": null,
+      "final_cut": 4.1,
+      "mean": 2.9,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 9,
+      "extra": 22,
+      "competition_ratio": 12.0
+    }
+  ]
+}

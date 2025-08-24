@@ -1,0 +1,62 @@
+{
+  "department_name": "아주대 문화콘텐츠학과 학생부종합ACE",
+  "current_year_inputs": {
+    "capacity": 9,
+    "extra": 0,
+    "applicants": 0,
+    "ratio": 0.0
+  },
+  "historical_data": [
+    {
+      "year": 2023,
+      "best": 2.67,
+      "median": null,
+      "p70": null,
+      "final_cut": 5.25,
+      "mean": 3.33,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 14,
+      "extra": 5,
+      "competition_ratio": 15.3
+    },
+    {
+      "year": 2024,
+      "best": 2.06,
+      "median": null,
+      "p70": null,
+      "final_cut": 3.25,
+      "mean": 2.64,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 14,
+      "extra": 4,
+      "competition_ratio": 25.4
+    },
+    {
+      "year": 2025,
+      "best": 2.38,
+      "median": null,
+      "p70": null,
+      "final_cut": 5.85,
+      "mean": 3.2,
+      "init_best": null,
+      "init_worst": null,
+      "init_mean": null,
+      "app_best": null,
+      "app_worst": null,
+      "app_mean": null,
+      "capacity": 9,
+      "extra": 3,
+      "competition_ratio": 14.4
+    }
+  ]
+}
