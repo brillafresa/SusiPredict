@@ -96,6 +96,12 @@ def _admitted_quantile_from_underlying(p_cond, a, b, lo, hi, q_sel):
 def _is_bad(a, b):
     return not (np.isfinite(a) and np.isfinite(b) and 0.2 < a < 100.0 and 0.2 < b < 100.0)
 
+# 🆕 체크박스 해제 시 값을 리셋하는 헬퍼 함수
+def _reset_value_on_uncheck(checkbox_key: str, value_key: str, default_value):
+    """체크박스가 해제되었을 때 해당 값 필드를 기본값으로 리셋합니다."""
+    if not st.session_state.get(checkbox_key, False):
+        st.session_state[value_key] = default_value
+
 def _solve_beta_two_quantiles(q1: QuantileTerm, q2: QuantileTerm, lo, hi, init_ab=(3.0, 6.0)):
     def objective(v):
         a, b = math.exp(v[0]), math.exp(v[1])
@@ -446,7 +452,7 @@ def _recency_weighted_forecast(years: np.ndarray, values: np.ndarray, x_new: flo
 
 def project_current_year(
     df, df_fit, lo, hi,
-    capacity_this_year, extra_this_year, applicants_this_year, ratio_this_year, weights
+    capacity_this_year, extra_this_year, ratio_this_year, weights
 ):
     """올해 지원자 분포(Beta) 산출: ratio는 정원(capacity) 기준"""
     years = df_fit["year"].values.astype(float)
@@ -457,13 +463,8 @@ def project_current_year(
         raise ValueError("올해 정원은 1 이상이어야 합니다.")
     total_seats_base = cap + (int(extra_this_year) if extra_this_year is not None else 0)
 
-    # ratio = applicants / capacity
-    if applicants_this_year and applicants_this_year > 0:
-        ratio = float(applicants_this_year) / float(cap)
-    elif ratio_this_year and ratio_this_year > 0:
-        ratio = float(ratio_this_year)
-    else:
-        ratio = None
+    # ratio = applicants / capacity (경쟁률만 사용)
+    ratio = ratio_this_year if ratio_this_year and ratio_this_year > 0 else None
 
     ratio_for_projection = ratio
     if ratio_for_projection is None:
@@ -637,7 +638,7 @@ def run_pipeline(
     years_data, department_name, applicant_grade,
     grade_bounds=(1.0, 9.0),
     capacity_this_year=None, extra_this_year=None,
-    applicants_this_year=None, ratio_this_year=None,
+    ratio_this_year=None,
     n_scenarios=5000, weights=BASE_WEIGHTS, debug=False
 ):
     lo, hi = grade_bounds
@@ -647,7 +648,7 @@ def run_pipeline(
     proj = project_current_year(
         df, df_fit, lo, hi,
         capacity_this_year, extra_this_year,
-        applicants_this_year, ratio_this_year, weights
+        ratio_this_year, weights
     )
     sim = simulate_acceptance(
         proj, df, applicant_grade, lo, hi,
@@ -923,9 +924,10 @@ if 'init' not in st.session_state:
     st.session_state.department_name = "가톨릭대 미디어기술콘텐츠학과 잠재능력우수자서류"
     st.session_state.capacity_this = 6
     st.session_state.extra_this = 0
-    st.session_state.applicants_this = 0
     st.session_state.ratio_this = 0.0
-    st.session_state.ratio_mode = "경쟁률"
+    # 🆕 명시적 입력 상태 제어
+    st.session_state.extra_inputted = False
+    st.session_state.ratio_inputted = False
     st.session_state.df_editor = default_df.copy()
     st.session_state.init = True
 
@@ -935,14 +937,11 @@ def _apply_profile_payload(payload: dict, column_order):
     st.session_state.department_name = str(payload.get("department_name", "") or "")
     st.session_state.capacity_this   = int(cur.get("capacity", 1) or 1)
     st.session_state.extra_this      = int(cur.get("extra", 0) or 0)
-    st.session_state.applicants_this = int(cur.get("applicants", 0) or 0)
     st.session_state.ratio_this      = float(cur.get("ratio", 0.0) or 0.0)
 
-    # 입력방식 자동복구
-    if st.session_state.applicants_this > 0 and (st.session_state.ratio_this == 0.0 or pd.isna(st.session_state.ratio_this)):
-        st.session_state.ratio_mode = "지원자 수"
-    else:
-        st.session_state.ratio_mode = "경쟁률"
+    # 🆕 입력 상태 복원 (기본값: 입력 안함)
+    st.session_state.extra_inputted = cur.get("extra_inputted", False)
+    st.session_state.ratio_inputted = cur.get("ratio_inputted", False)
 
     hist = pd.DataFrame(payload.get("historical_data", []))
     st.session_state.df_editor = hist.reindex(columns=column_order)
@@ -959,28 +958,54 @@ if st.session_state.get("_PROFILE_TO_APPLY", None) is not None:
 
 # ===================== 본문: 프로필/표/파일 IO/실행 =====================
 with st.container(border=True):
-    st.markdown("#### 📝 학과 프로필")
-
-    department_name = st.text_input("학과명", key="department_name")
-
+    
     st.markdown("##### 올해 입시 정보")
+   
 
-    c1, c2, c3, c4 = st.columns([1,1,1,2])  # 정원/추가/입력방식/값
-    capacity_this = c1.number_input("정원", min_value=1, step=1, key="capacity_this")
-    extra_this    = c2.number_input("추가충원", min_value=0, step=1, key="extra_this",
-                                    help="모르면 0으로 두면 자동 추정됩니다.")
-    ratio_mode    = c3.selectbox("입력방식", ["경쟁률", "지원자 수"],
-                                 index=(0 if st.session_state.get("ratio_mode","경쟁률")=="경쟁률" else 1),
-                                 key="ratio_mode")
-
-    if st.session_state.ratio_mode == "지원자 수":
-        applicants_this = c4.number_input("지원자 수", min_value=0, step=1, key="applicants_this")
-        if st.session_state.applicants_this > 0:
-            st.session_state.ratio_this = 0.0
-    else:
-        ratio_this = c4.number_input("경쟁률", min_value=0.0, step=0.1, key="ratio_this")
-        if st.session_state.ratio_this > 0:
-            st.session_state.applicants_this = 0
+    # 🆕 2줄 레이아웃: 1줄에 학과명과 정원, 2줄에 추가충원, 입력함, 경쟁률, 입력함
+    # 1줄: 학과명 | 정원
+    c1, c2 = st.columns([1, 1])
+    department_name = c1.text_input("학과명", key="department_name")
+    capacity_this = c2.number_input("정원", min_value=1, step=1, key="capacity_this")
+    
+    # 2줄: 추가충원 | 입력함 | 경쟁률 | 입력함
+    c3, c4, c5, c6 = st.columns([1, 1, 1, 1])
+    
+    # 추가충원
+    extra_this = c3.number_input(
+        "추가충원", 
+        min_value=0, 
+        step=1, 
+        key="extra_this",
+        disabled=not st.session_state.get("extra_inputted", False)
+    )
+    
+    # 추가충원 입력함 체크박스
+    extra_inputted = c4.checkbox(
+        "입력함", 
+        value=st.session_state.get("extra_inputted", False),
+        key="extra_inputted",
+        help="체크하면 추가충원 값을 입력하고, 체크하지 않으면 자동 추정됩니다",
+        on_change=lambda: _reset_value_on_uncheck("extra_inputted", "extra_this", 0)
+    )
+    
+    # 경쟁률
+    ratio_this = c5.number_input(
+        "경쟁률",
+        min_value=0.0,
+        step=0.1,
+        key="ratio_this",
+        disabled=not st.session_state.get("ratio_inputted", False)
+    )
+    
+    # 경쟁률 입력함 체크박스
+    ratio_inputted = c6.checkbox(
+        "입력함",
+        value=st.session_state.get("ratio_inputted", False),
+        key="ratio_inputted",
+        help="체크하면 경쟁률을 입력하고, 체크하지 않으면 자동 추정됩니다",
+        on_change=lambda: _reset_value_on_uncheck("ratio_inputted", "ratio_this", 0.0)
+    )
 
     # ------ 과거 입시 결과 (폼으로 편집-적용 분리) ------
     st.markdown("##### 과거 입시 결과")
@@ -1033,8 +1058,10 @@ with st.container(border=True):
             "current_year_inputs": {
                 "capacity":     int(st.session_state.get("capacity_this", 0) or 0),
                 "extra":        int(st.session_state.get("extra_this", 0) or 0),
-                "applicants":   int(st.session_state.get("applicants_this", 0) or 0),
                 "ratio":        float(st.session_state.get("ratio_this", 0.0) or 0.0),
+                # 🆕 입력 상태 정보 저장
+                "extra_inputted": st.session_state.get("extra_inputted", False),
+                "ratio_inputted": st.session_state.get("ratio_inputted", False),
             },
             "historical_data": st.session_state.df_editor.reindex(columns=COLUMN_ORDER).to_dict(orient="records"),
         }
@@ -1054,7 +1081,7 @@ with st.container(border=True):
         uploaded_file = uc1.file_uploader(
             "불러오기 (JSON)", type="json",
             key=f"prof_uploader_{st.session_state['_UPLOAD_REV']}",
-            help="파일 선택 후 ‘적용’ 버튼을 누르세요."
+            help="파일 선택 후 ‘적용' 버튼을 누르세요."
         )
         apply_disabled = uploaded_file is None
         if uc2.button("적용", use_container_width=True, disabled=apply_disabled):
@@ -1102,9 +1129,9 @@ if st.button("🚀 예측 실행", type="primary", use_container_width=True):
                 applicant_grade=float(applicant_grade),
                 grade_bounds=GRADE_BOUNDS,
                 capacity_this_year=int(st.session_state.capacity_this),
-                extra_this_year=(int(st.session_state.extra_this) if st.session_state.extra_this > 0 else None),
-                applicants_this_year=(int(st.session_state.applicants_this) if st.session_state.applicants_this > 0 else None),
-                ratio_this_year=(float(st.session_state.ratio_this) if st.session_state.ratio_this > 0 else None),
+                # 🆕 입력 상태에 따른 값 전달
+                extra_this_year=(int(st.session_state.extra_this) if st.session_state.get("extra_inputted", False) else None),
+                ratio_this_year=(float(st.session_state.ratio_this) if st.session_state.get("ratio_inputted", False) else None),
                 n_scenarios=int(n_sims),
                 weights=current_weights,
                 debug=bool(debug_mode)

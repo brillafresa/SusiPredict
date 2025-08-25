@@ -1,0 +1,59 @@
+# Cursor Rules for SusiPredict Project
+
+## Development Guidelines
+
+### Streamlit Application Management
+
+- **Single Port Usage**: Always use the default Streamlit port (8501) for development
+- **Process Cleanup**: Before starting Streamlit, ensure no other instances are running
+- **Restart Pattern**: Use `taskkill /f /im streamlit.exe` to stop existing processes, then `streamlit run app.py` to restart
+- **No Multiple Ports**: Avoid running multiple Streamlit instances on different ports (8502, 8503, etc.)
+
+### Code Quality
+
+- Follow PEP 8 style guidelines
+- Use type hints where appropriate
+- Write comprehensive docstrings for functions and classes
+- Maintain consistent naming conventions
+
+### Testing
+
+- Run tests before making significant changes: `pytest`
+- Ensure all tests pass before committing changes
+- Write tests for new functionality
+- Use descriptive test names that explain the expected behavior
+
+### Git Workflow
+
+- Make atomic commits with clear, descriptive messages
+- Use conventional commit format when possible
+- Test changes locally before pushing
+- Keep commits focused on single features or fixes
+
+### Documentation
+
+- Update README.md for user-facing changes
+- Update CHANGELOG.md for all version changes
+- Update CONTRIBUTING.md for development process changes
+- Keep documentation in sync with code changes
+
+### Error Handling
+
+- Implement proper error handling for user inputs
+- Provide clear error messages
+- Log errors appropriately for debugging
+- Handle edge cases gracefully
+
+### Performance
+
+- Optimize code for readability first, then performance
+- Profile code when performance issues arise
+- Use appropriate data structures for the task
+- Avoid unnecessary computations in loops
+
+### Security
+
+- Never commit sensitive information (API keys, passwords)
+- Validate and sanitize user inputs
+- Use environment variables for configuration
+- Follow security best practices for web applications

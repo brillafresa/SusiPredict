@@ -2,9 +2,10 @@
   "department_name": "서울여대 언론영상학부 바롬인재서류",
   "current_year_inputs": {
     "capacity": 7,
-    "extra": 0,
-    "applicants": 0,
-    "ratio": 0.0
+    "extra": null,
+    "ratio": null,
+    "extra_inputted": false,
+    "ratio_inputted": false
   },
   "historical_data": [
     {

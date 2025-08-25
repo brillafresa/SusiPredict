@@ -2,9 +2,10 @@
   "department_name": "가톨릭대 미디어기술콘텐츠학과 논술",
   "current_year_inputs": {
     "capacity": 4,
-    "extra": 0,
-    "applicants": 0,
-    "ratio": 0.0
+    "extra": null,
+    "ratio": null,
+    "extra_inputted": false,
+    "ratio_inputted": false
   },
   "historical_data": [
     {

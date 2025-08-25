@@ -2,9 +2,10 @@
   "department_name": "아주대 문화콘텐츠학과 학생부종합ACE",
   "current_year_inputs": {
     "capacity": 9,
-    "extra": 0,
-    "applicants": 0,
-    "ratio": 0.0
+    "extra": null,
+    "ratio": null,
+    "extra_inputted": false,
+    "ratio_inputted": false
   },
   "historical_data": [
     {

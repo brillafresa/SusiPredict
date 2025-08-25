@@ -2,10 +2,11 @@
   "department_name": "가톨릭대 미디어기술콘텐츠학과 가톨릭지도자추천",
   "current_year_inputs": {
     "capacity": 2,
-    "extra": 0,
-    "applicants": 0,
-    "ratio": 0.0,
-    "input_mode": "ratio"
+    "extra": null,
+    "ratio": null,
+    "input_mode": "ratio",
+    "extra_inputted": false,
+    "ratio_inputted": false
   },
   "historical_data": [
     {
