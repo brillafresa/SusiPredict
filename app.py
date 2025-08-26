@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # app.py
 # 🎓 수시 합격 가능성 예측기 (Streamlit)
-# v6.2.0 — 디버그모드 복원(중간계산 표시) + 로버스트 앵커 + 겹침표시 + 확률기준 도움말
+# v7.0 — Causal Forecasting (Predicting DNA, not outcomes)
 
 import numpy as np
 import pandas as pd
@@ -81,7 +81,7 @@ def _safe_ppf_p(p): return _clip(p, 1e-6, 1 - 1e-6)
 def _beta_ppf_std(p, a, b): return stats.beta.ppf(_safe_ppf_p(p), a, b)
 def _beta_quantile(p, a, b, lo, hi): return _beta_ppf_std(p, a, b) * (hi - lo) + lo
 def _beta_cdf(x, a, b, lo, hi): return stats.beta.cdf(_clip((x - lo) / (hi - lo), 0.0, 1.0), a, b)
-def _beta_pdf(x, a, b, lo, hi): return stats.beta.pdf(_clip((x - lo) / (hi - lo), 0.0, 1.0), a, b) / (hi - lo)
+
 
 def _beta_trunc_mean_std(a, b, z_trunc):
     denominator = betainc(a, b, z_trunc)
@@ -454,93 +454,52 @@ def project_current_year(
     df, df_fit, lo, hi,
     capacity_this_year, extra_this_year, ratio_this_year, weights
 ):
-    """올해 지원자 분포(Beta) 산출: ratio는 정원(capacity) 기준"""
+    """
+    << 핵심 로직 변경 (v7.0) >>
+    '결과'가 아닌 '원인'을 예측합니다.
+    1. 과거 데이터로부터 각 연도의 지원자 분포 'DNA' (beta_a, beta_b)를 추출합니다. (fit_per_year_models에서 수행)
+    2. 이 'DNA'의 추세를 예측하여, 올해의 지원자 분포 DNA(a_proj, b_proj)를 결정합니다.
+    3. 이렇게 예측된 DNA를 최종 결과로 사용합니다.
+    """
     years = df_fit["year"].values.astype(float)
     current_year = years.max() + 1.0 if len(years) > 0 else 2026
+    
+    # 1. 'DNA' (beta_a, beta_b) 예측
+    s_a = df_fit[['year', 'beta_a']].dropna()
+    s_b = df_fit[['year', 'beta_b']].dropna()
+    
+    a_proj = _recency_weighted_forecast(s_a["year"].values, s_a["beta_a"].values, current_year)
+    b_proj = _recency_weighted_forecast(s_b["year"].values, s_b["beta_b"].values, current_year)
 
+    # 예측 실패 시 가장 최근 값으로 폴백
+    if pd.isna(a_proj) or pd.isna(b_proj):
+        if not s_a.empty: a_proj = s_a["beta_a"].iloc[-1]
+        if not s_b.empty: b_proj = s_b["beta_b"].iloc[-1]
+    
+    # 그래도 값이 없으면 (데이터가 전혀 없으면) 기본값으로 폴백
+    if pd.isna(a_proj) or pd.isna(b_proj) or _is_bad(a_proj, b_proj):
+        a_proj, b_proj = 3.0, 6.0
+    
+    # 2. 올해 환경(N, M, q_select)에 대한 대표값 계산 (디버그 및 표시용)
     cap = int(capacity_this_year or 0)
-    if cap <= 0:
-        raise ValueError("올해 정원은 1 이상이어야 합니다.")
     total_seats_base = cap + (int(extra_this_year) if extra_this_year is not None else 0)
-
-    # ratio = applicants / capacity (경쟁률만 사용)
     ratio = ratio_this_year if ratio_this_year and ratio_this_year > 0 else None
-
-    ratio_for_projection = ratio
-    if ratio_for_projection is None:
+    
+    ratio_for_display = ratio
+    if ratio_for_display is None:
         historical = df["competition_ratio"].dropna().values
-        ratio_for_projection = np.median(historical) if len(historical) > 0 else None
+        ratio_for_display = np.median(historical) if len(historical) > 0 else None
 
-    M = int(round(ratio_for_projection * cap)) if (ratio_for_projection and cap > 0) else None
+    M = int(round(ratio_for_display * cap)) if (ratio_for_display and cap > 0) else None
     q_sel = (min(1.0, total_seats_base / M) if (M and M > 0) else None)
     q_init = (cap / float(M)) if (cap and M and M > 0) else None
 
-    # --- 앵커는 'robust anchor' 열을 사용 ---
-    def _ts(name):
-        s = df_fit[[name, "year"]].dropna()
-        if s.empty:
-            return None
-        return _recency_weighted_forecast(
-            s["year"].values.astype(float),
-            s[name].values.astype(float),
-            current_year,
-            half_life=1.0,   # 최근 1년 반감
-            mix=0.65         # 회귀예측 65% + 직전값 35%
-        )
-
-    q_terms: List[QuantileTerm] = []
-    m_terms: List[MeanTerm] = []
-    anchors_map = {
-        "median": ("anchor_median", 0.5),
-        "p70": ("anchor_p70", 0.7),
-        "final_cut": ("anchor_final", 1.0),
-        "best": ("anchor_best", 1.0/(total_seats_base+1)),
-        "init_best": ("anchor_init_best", 1.0/(cap+1) if cap else 0),
-        "init_worst": ("anchor_init_worst", cap/(cap+1) if cap else 1),
-    }
-    for kind, (col, p_cond) in anchors_map.items():
-        v = _ts(col)
-        if v is None or p_cond == 0:
-            continue
-        if kind.startswith("init") and q_init:
-            q_terms.append(QuantileTerm(kind, p_cond * q_init, v))
-        else:
-            p = p_cond * q_sel if q_sel else p_cond
-            q_terms.append(QuantileTerm(kind, p, v))
-
-    if (v := _ts("anchor_final_mean")) is not None:
-        m_terms.append(MeanTerm("mean", v, q_sel))
-    if (v := _ts("anchor_app_mean")) is not None and M:
-        m_terms.append(MeanTerm("app_mean", v, None))
-    if (v := _ts("anchor_init_mean")) is not None and q_init:
-        m_terms.append(MeanTerm("init_mean", v, q_init))
-
-    if len(q_terms) < 2:
-        a0, b0 = 3.0, 6.0
-    else:
-        q_terms.sort(key=lambda x: x.p)
-        a0, b0 = _solve_beta_two_quantiles(q_terms[0], q_terms[-1], lo, hi)
-
-    res = optimize.minimize(
-        _objective_function,
-        np.log([a0, b0]),
-        args=(q_terms, m_terms, lo, hi, weights),
-        method="Nelder-Mead",
-        options={"maxiter": 2500}
-    )
-    a, b = np.exp(res.x)
-    if (not res.success) or _is_bad(a, b):
-        a, b = 3.0, 6.0
-
     return {
-        "a": float(a), "b": float(b),
-        "model_type": "underlying+trunc" if q_sel else "admitted-only",
+        "a": float(a_proj), "b": float(b_proj),
+        "model_type": "causal_forecast",
         "q_select_this": q_sel,
-        "total_seats_this": total_seats_base,  # N
-        "capacity_this": cap,                   # 정원
-        "ratio_this": ratio,                    # ratio = applicants/capacity
-        "M_this": M,                            # 지원자수
-        "q_init_this": q_init
+        "total_seats_this": total_seats_base, "capacity_this": cap,
+        "ratio_this": ratio, "M_this": M, "q_init_this": q_init
     }
 
 # ===================== 시뮬레이션 =====================
@@ -679,24 +638,13 @@ def run_pipeline(
         st.code("🧩 전처리 결과 (q_select · 모집/지원 규모)", language="text")
         st.dataframe(dbg_pre, use_container_width=True)
 
-        # 피팅 결과(입력 vs 적합치 vs 앵커)
-        cols_show = [
-            "year","beta_a","beta_b","model_type","fit_loss","q_select",
-            "fitted_best","fitted_final","fitted_median","fitted_p70","fitted_final_mean",
-            "anchor_best","anchor_final","anchor_median","anchor_p70","anchor_final_mean"
-        ]
-        st.code("🧪 연도별 피팅 결과 (입력 vs 적합치 · 앵커)", language="text")
-        st.dataframe(df_fit[cols_show], use_container_width=True)
+        # 피팅 결과(beta_a, beta_b 중심)
+        st.code("🧪 연도별 피팅 결과 (beta_a, beta_b)", language="text")
+        st.dataframe(df_fit[["year","beta_a","beta_b","model_type","fit_loss"]], use_container_width=True)
 
         # 올해 투영 파라미터
         st.code("🧮 올해 최종 파라미터/규모", language="text")
-        st.code(json.dumps({
-            "beta_a": proj["a"], "beta_b": proj["b"],
-            "q_select_this": proj["q_select_this"],
-            "N(total_seats_this)": proj["total_seats_this"],
-            "M_this(지원자수)": proj["M_this"],
-            "ratio_this(입력/자동)": proj["ratio_this"],
-        }, indent=2, ensure_ascii=False), language="json")
+        st.code(json.dumps({k:v for k,v in proj.items()}, indent=2, ensure_ascii=False), language="json")
 
         # 컷 분포 요약/샘플
         if len(sim["Ts"]) >= 10:
@@ -921,8 +869,8 @@ default_df = pd.DataFrame([
 
 # ---- 최초 세션 초기화 ----
 if 'init' not in st.session_state:
-    st.session_state.department_name = "가톨릭대 미디어기술콘텐츠학과 잠재능력우수자서류"
-    st.session_state.capacity_this = 6
+    st.session_state.department_name = "아주대 문화콘텐츠학과 학생부종합ACE"
+    st.session_state.capacity_this = 9
     st.session_state.extra_this = 0
     st.session_state.ratio_this = 0.0
     # 🆕 명시적 입력 상태 제어
@@ -959,19 +907,12 @@ if st.session_state.get("_PROFILE_TO_APPLY", None) is not None:
 # ===================== 본문: 프로필/표/파일 IO/실행 =====================
 with st.container(border=True):
     
-    st.markdown("##### 올해 입시 정보")
-   
-
-    # 🆕 2줄 레이아웃: 1줄에 학과명과 정원, 2줄에 추가충원, 입력함, 경쟁률, 입력함
-    # 1줄: 학과명 | 정원
-    c1, c2 = st.columns([1, 1])
+    st.markdown("##### 📝 학과 프로필")
+    c1, c2 = st.columns([2,1])
     department_name = c1.text_input("학과명", key="department_name")
     capacity_this = c2.number_input("정원", min_value=1, step=1, key="capacity_this")
     
-    # 2줄: 추가충원 | 입력함 | 경쟁률 | 입력함
-    c3, c4, c5, c6 = st.columns([1, 1, 1, 1])
-    
-    # 추가충원
+    c3, c4, c5, c6 = st.columns([2,1,2,1])
     extra_this = c3.number_input(
         "추가충원", 
         min_value=0, 
@@ -980,16 +921,14 @@ with st.container(border=True):
         disabled=not st.session_state.get("extra_inputted", False)
     )
     
-    # 추가충원 입력함 체크박스
-    extra_inputted = c4.checkbox(
+    c4.checkbox(
         "입력함", 
         value=st.session_state.get("extra_inputted", False),
         key="extra_inputted",
-        help="체크하면 추가충원 값을 입력하고, 체크하지 않으면 자동 추정됩니다",
+        help="체크하면 추가충원 값을 수동으로 입력하고, 체크 해제 시 자동 추정됩니다.",
         on_change=lambda: _reset_value_on_uncheck("extra_inputted", "extra_this", 0)
     )
     
-    # 경쟁률
     ratio_this = c5.number_input(
         "경쟁률",
         min_value=0.0,
@@ -998,12 +937,11 @@ with st.container(border=True):
         disabled=not st.session_state.get("ratio_inputted", False)
     )
     
-    # 경쟁률 입력함 체크박스
-    ratio_inputted = c6.checkbox(
+    c6.checkbox(
         "입력함",
         value=st.session_state.get("ratio_inputted", False),
         key="ratio_inputted",
-        help="체크하면 경쟁률을 입력하고, 체크하지 않으면 자동 추정됩니다",
+        help="체크하면 경쟁률을 수동으로 입력하고, 체크 해제 시 자동 추정됩니다.",
         on_change=lambda: _reset_value_on_uncheck("ratio_inputted", "ratio_this", 0.0)
     )
 
@@ -1048,9 +986,8 @@ with st.container(border=True):
             except Exception as e:
                 st.error(f"표 변경 반영 중 오류: {e}")
 
-    # ------ 프로필 파일 저장하기 / 불러오기 ------
-    st.markdown("##### 프로필 파일  저장하기 / 불러오기")
-    lcol, rcol = st.columns([1,1], vertical_alignment="center")
+    st.markdown("###### **프로필 파일 저장/불러오기**")
+    lcol, rcol = st.columns([1,3])
 
     with lcol:
         data_to_save = {
@@ -1068,7 +1005,7 @@ with st.container(border=True):
         json_data = json.dumps(data_to_save, indent=2, ensure_ascii=False)
         safe_department_name = "".join([c for c in st.session_state.get("department_name","") if c.isalnum() or c in (' ', '-')]).rstrip()
         st.download_button(
-            "💾 저장하기 (JSON)", data=json_data,
+            "💾 저장", data=json_data,
             file_name=f'{safe_department_name or "profile"}_프로필.json',
             mime='application/json', use_container_width=True
         )
@@ -1111,9 +1048,7 @@ if st.button("🚀 예측 실행", type="primary", use_container_width=True):
                 current_weights.update({"app_mean": 0.3, "app_best": 0.3, "app_worst": 0.3})
 
             def to_py_type(v):
-                if v is None: return None
-                if isinstance(v, str) and v.strip() == "": return None
-                if isinstance(v, (float, np.floating)) and pd.isna(v): return None
+                if v is None or (isinstance(v, str) and v.strip() == "") or pd.isna(v): return None
                 try: return float(v)
                 except (ValueError, TypeError): return None
 
@@ -1129,7 +1064,6 @@ if st.button("🚀 예측 실행", type="primary", use_container_width=True):
                 applicant_grade=float(applicant_grade),
                 grade_bounds=GRADE_BOUNDS,
                 capacity_this_year=int(st.session_state.capacity_this),
-                # 🆕 입력 상태에 따른 값 전달
                 extra_this_year=(int(st.session_state.extra_this) if st.session_state.get("extra_inputted", False) else None),
                 ratio_this_year=(float(st.session_state.ratio_this) if st.session_state.get("ratio_inputted", False) else None),
                 n_scenarios=int(n_sims),

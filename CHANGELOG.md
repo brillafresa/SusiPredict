@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] - 2025-08-26
+
+### Added
+
+- 🆕 **인과관계 기반 예측(Causal Forecasting)**: '결과'가 아닌 '원인'을 예측하는 새로운 모델 아키텍처
+  - 지원자 그룹의 'DNA'(Beta(a,b) 분포) 직접 예측
+  - 로버스트 앵커 시스템 대신 beta_a, beta_b 시계열 예측
+  - 모델 타입을 "causal_forecast"로 변경
+
+### Changed
+
+- 🔄 **핵심 로직 전면 재설계**: `project_current_year` 함수 완전 재작성
+
+  - 기존: anchor\_\* 컬럼들을 사용하여 미래 결과 지표 예측
+  - 새로운: df_fit의 beta_a, beta_b 컬럼 시계열을 직접 예측
+  - 복잡한 최적화 과정 제거, 단순하고 안정적인 예측 방식
+
+- 🔄 **UI 개선**:
+
+  - 섹션 제목을 "📝 학과 프로필"로 변경
+  - 컬럼 레이아웃 최적화 (2:1, 2:1:2:1)
+  - 프로필 파일 저장/불러오기 UI 간소화
+
+- 🔄 **기본 데이터 변경**: 아주대 문화콘텐츠학과 학생부종합ACE로 변경
+
+### Technical Details
+
+- **DNA 예측 로직**: `_recency_weighted_forecast`를 사용하여 beta_a, beta_b 각각 예측
+- **폴백 메커니즘**: 예측 실패 시 가장 최근 값 사용, 그래도 없으면 기본값(3.0, 6.0)
+- **디버그 패널 간소화**: beta_a, beta_b 중심으로 정보 표시
+- **코드 최적화**: to_py_type 함수 로직 간소화
+
+### Fixed
+
+- 🐛 **예측 안정성 문제 해결**: 특정 데이터셋에서 발생하던 비현실적인 예측값 문제 해결
+- 🐛 **V자형 트렌드 처리**: 경쟁률 급등으로 인한 최종컷 V자 패턴을 노이즈로 오인하는 문제 해결
+- 🐛 **과적합 방지**: 복잡한 앵커 기반 예측 대신 안정적인 DNA 예측으로 전환
+
+### Breaking Changes
+
+- ⚠️ **모델 타입 변경**: "underlying+trunc" → "causal_forecast"
+- ⚠️ **예측 방식 변경**: 결과 지표 예측 → 분포 DNA 예측
+
 ## [6.2.3] - 2025-08-25
 
 ### Added
