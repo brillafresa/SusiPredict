@@ -892,6 +892,11 @@ with st.sidebar:
         "디버그 모드 (중간값 출력)", value=False,
         help="전처리/피팅/투영/시뮬레이션의 핵심 중간값을 화면에 표시합니다."
     )
+    
+    # 연락처 정보
+    st.markdown("---")
+    st.markdown("**📧 연락처**")
+    st.markdown("brillafresa@gmail.com")
 
 # ---- 기본 데이터 ----
 default_df = pd.DataFrame([
