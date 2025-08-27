@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] - 2025-08-27
+
+### Added
+
+- 🆕 **'최근 가중 평균' 예측 방식 도입**: 선형 추세 예측을 대체하여 모델의 안정성과 현실 반영도 향상
+  - `_predict_with_recency_weighted_average` 함수 추가: 최신 데이터에 기하급수적으로 높은 가중치를 부여하는 가중 평균 계산
+  - `_get_stochastic_forecast` 함수 개선: '최근 가중 평균'을 예측의 중심점으로 사용하고 과거의 변동성을 반영하여 확률적으로 예측
+
+### Changed
+
+- 🔄 **예측 로직 전면 개선**:
+  - `_recency_weighted_forecast` 함수를 `_predict_with_recency_weighted_average`로 교체
+  - `project_current_year` 함수의 DNA 예측 로직을 새로운 '최근 가중 평균' 방식으로 변경
+  - `_get_stochastic_forecast` 함수의 핵심 로직을 '최근 가중 평균' 방식으로 교체
+
+### Technical Details
+
+- **가중치 계산**: alpha(감소 계수)를 이용해 최신 데이터부터 alpha^0, alpha^1, alpha^2... 순으로 가중치 생성
+- **기본 alpha 값**: 0.6 (최신 데이터에 더 높은 가중치 부여)
+- **변동성 반영**: 과거의 변동성(단순 평균과의 차이)을 통해 불확실성을 반영
+- **함수 시그니처 변경**: `_get_stochastic_forecast`에서 `x_new` 파라미터 제거, `n_scenarios` 위치 변경
+
+### Fixed
+
+- 🐛 **비선형적 변동성 처리 문제 해결**: V자형 패턴 등 입시 데이터의 비선형적 특성을 더 잘 반영
+- 🐛 **예측 안정성 향상**: 선형 추세 예측의 한계를 극복하여 더 현실적인 예측 제공
+
 ## [7.0.0] - 2025-08-26
 
 ### Added

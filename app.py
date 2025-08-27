@@ -117,16 +117,25 @@ def _solve_beta_two_quantiles(q1: QuantileTerm, q2: QuantileTerm, lo, hi, init_a
     except Exception:
         return init_ab
 
-def _get_stochastic_forecast(years, values, x_new, n_scenarios, min_val=0.0):
+def _get_stochastic_forecast(years: np.ndarray, values: np.ndarray, n_scenarios: int, min_val: float = 0.0, alpha: float = 0.6) -> np.ndarray:
+    """
+    '최근 가중 평균'을 예측의 중심점으로 사용하고, 과거의 변동성을 반영하여 확률적으로 예측합니다.
+    """
     valid_mask = np.isfinite(years) & np.isfinite(values)
     years, values = years[valid_mask], values[valid_mask]
-    if len(values) < 4:
+
+    if len(values) < 2: # 의미 있는 평균/변동성을 계산하려면 최소 2개의 데이터 필요
         return np.random.choice(values, n_scenarios, replace=True) if len(values) > 0 else np.array([])
-    slope, intercept, _, _ = stats.theilslopes(values, years)
-    forecast_center = intercept + slope * x_new
-    predicted_values = intercept + slope * years
-    residuals = values - predicted_values
+    
+    # 1. '최근 가중 평균'으로 예측의 중심점을 계산
+    forecast_center = _predict_with_recency_weighted_average(years, values, alpha=alpha)
+
+    # 2. 과거의 변동성(단순 평균과의 차이)을 계산
+    residuals = values - np.mean(values)
+    
+    # 3. 중심점과 변동성을 결합하여 n_scenarios개의 가상 시나리오 생성
     scenarios = forecast_center + np.random.choice(residuals, n_scenarios, replace=True)
+    
     return np.maximum(min_val, scenarios)
 
 # ===================== 전처리/피팅/투영 =====================
@@ -422,33 +431,25 @@ def fit_per_year_models(df, lo, hi, weights, anchor_tol: float = 0.75):
     return pd.DataFrame(outs, columns=cols).sort_values("year").reset_index(drop=True)
 
 # ---- 최근연도 가중 회귀로 1년 후 지표 앵커 예측 ----
-def _recency_weighted_forecast(years: np.ndarray, values: np.ndarray, x_new: float,
-                               half_life: float = 1.0, mix: float = 0.65) -> float:
-    if len(values) == 0:
+def _predict_with_recency_weighted_average(years: np.ndarray, values: np.ndarray, alpha: float = 0.6) -> float:
+    """
+    최신 데이터에 더 높은 가중치를 부여하는 가중 평균을 계산합니다.
+    alpha (감소 계수): 1에 가까울수록 모든 연도를 비슷하게, 0에 가까울수록 최근 연도만 고려합니다.
+    """
+    if len(values) == 0: 
         return np.nan
-    if len(values) == 1:
-        return float(values[-1])
-
-    y_last = float(values[-1])
-    t_last = float(years[-1])
-
-    w = 0.5 ** ((t_last - years) / float(half_life))
-    w = np.clip(w, 1e-6, 1.0)
-
-    S_w  = np.sum(w)
-    S_x  = np.sum(w * years)
-    S_y  = np.sum(w * values)
-    S_xx = np.sum(w * years * years)
-    S_xy = np.sum(w * years * values)
-    denom = (S_w * S_xx - S_x * S_x)
-    if abs(denom) < 1e-12:
-        y_hat = y_last
-    else:
-        a = (S_w * S_xy - S_x * S_y) / denom
-        b = (S_y - a * S_x) / S_w
-        y_hat = a * x_new + b
-
-    return float(mix * y_hat + (1.0 - mix) * y_last)
+    
+    # 연도순으로 정렬하여 가중치를 올바르게 적용
+    sorted_indices = np.argsort(years)
+    sorted_values = values[sorted_indices]
+    
+    # 가장 최근 데이터부터 alpha^0, alpha^1, alpha^2... 순으로 가중치 생성
+    weights = alpha ** np.arange(len(sorted_values))
+    weights /= np.sum(weights) # 가중치 총합이 1이 되도록 정규화
+    
+    # 최신 데이터가 높은 가중치를 받도록 값을 뒤집어준 후 가중 평균 계산
+    weighted_avg = np.sum(sorted_values[::-1] * weights)
+    return float(weighted_avg)
 
 def project_current_year(
     df, df_fit, lo, hi,
@@ -468,8 +469,8 @@ def project_current_year(
     s_a = df_fit[['year', 'beta_a']].dropna()
     s_b = df_fit[['year', 'beta_b']].dropna()
     
-    a_proj = _recency_weighted_forecast(s_a["year"].values, s_a["beta_a"].values, current_year)
-    b_proj = _recency_weighted_forecast(s_b["year"].values, s_b["beta_b"].values, current_year)
+    a_proj = _predict_with_recency_weighted_average(s_a["year"].values, s_a["beta_a"].values, alpha=0.6)
+    b_proj = _predict_with_recency_weighted_average(s_b["year"].values, s_b["beta_b"].values, alpha=0.6)
 
     # 예측 실패 시 가장 최근 값으로 폴백
     if pd.isna(a_proj) or pd.isna(b_proj):
@@ -523,7 +524,7 @@ def simulate_acceptance(
         ratios = np.full(n_scenarios, float(ratio_this_year))
     else:
         ratios = _get_stochastic_forecast(
-            years, df["competition_ratio"].values, current_year, n_scenarios, min_val=0.5
+            years, df["competition_ratio"].values, n_scenarios, min_val=0.5
         )
 
     if is_extra_known:
@@ -538,7 +539,7 @@ def simulate_acceptance(
                 np.nan
             )
         extra_ratios = _get_stochastic_forecast(
-            years, extra_ratio_series, current_year, n_scenarios, min_val=0.0
+            years, extra_ratio_series, n_scenarios, min_val=0.0
         )
         extras = np.round(np.nan_to_num(extra_ratios, nan=0.0) * capacity_this_year).astype(int)
 
@@ -869,7 +870,7 @@ default_df = pd.DataFrame([
 
 # ---- 최초 세션 초기화 ----
 if 'init' not in st.session_state:
-    st.session_state.department_name = "아주대 문화콘텐츠학과 학생부종합ACE"
+    st.session_state.department_name = "동해국제대 미래도시공학과 창의융합인재전형"
     st.session_state.capacity_this = 9
     st.session_state.extra_this = 0
     st.session_state.ratio_this = 0.0
