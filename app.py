@@ -949,7 +949,7 @@ if st.session_state.get("_PROFILE_TO_APPLY", None) is not None:
 # ===================== 본문: 프로필/표/파일 IO/실행 =====================
 with st.container(border=True):
     
-    st.caption("모바일 환경에서 지원자 등급은 상단 '>>'클릭하여 입력하세요.")
+    st.caption("모바일 환경에서 지원자 등급은 상단 '>>' 클릭, PC에서는 좌측 사이드바에서 입력하세요.")
     st.markdown("##### 📝 학과 프로필")
     c1, c2 = st.columns([2,1])
     department_name = c1.text_input("학과명", key="department_name")
