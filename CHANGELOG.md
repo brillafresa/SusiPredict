@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2025-08-27
+
+### Added
+
+- 🆕 **'자가 회복 및 보고' 메커니즘**: 모델이 데이터의 내부 일관성을 스스로 진단하고 문제가 있을 경우 지능적으로 대처
+  - **부분 무효화 및 재시도**: 피팅 실패 시 문제를 일으키는 특정 데이터 포인트 하나만 무효화하고 피팅을 재시도
+  - **최종 실패 시 실행 중단**: 재시도마저 실패할 경우 잘못된 예측을 내보내는 대신 사용자에게 데이터의 문제점을 알리고 실행을 중단
+  - **재시도 과정 보고**: 부분 무효화가 성공적으로 수행되었을 경우 어떤 데이터가 보정되었는지 사용자에게 투명하게 보고
+
+### Changed
+
+- 🔄 **핵심 함수 개선**:
+  - `_objective_function` 함수 확장: `return_details=True` 옵션으로 각 항목별 오차 반환
+  - `_fit_underlying_from_competitive` 함수 수정: 최적화에 사용된 `terms` 정보 반환
+  - `fit_per_year_models` 함수 전면 개선: 피팅 재시도 로직 및 상태 추적 시스템 추가
+  - `project_current_year` 함수 수정: 피팅에 최종 실패한 연도는 제외하여 예측 품질 향상
+  - `run_pipeline` 함수 강화: 최종 실패 감지 및 재시도 성공 보고 시스템
+
+### Technical Details
+
+- **피팅 상태 추적**: `fit_status` 컬럼으로 'SUCCESS', 'RETRY_SUCCESS', 'FAILURE' 상태 관리
+- **무효화된 컬럼 추적**: `invalidated_col` 컬럼으로 어떤 데이터가 제외되었는지 기록
+- **오차 기여도 분석**: `_objective_function`에서 각 데이터 포인트별 오차 계산으로 문제 원인 파악
+- **지능적 재시도**: 가장 큰 오차를 유발한 항목을 자동으로 찾아 무효화하고 재시도
+- **사용자 투명성**: 데이터 보정 과정을 명확하게 보고하여 신뢰성 향상
+
+### Fixed
+
+- 🐛 **피팅 실패 시 정보 손실 문제 해결**: 무의미한 기본값(3,6) 대신 NaN으로 명시하여 오염된 데이터 방지
+- 🐛 **데이터 내부 일관성 문제 해결**: 통계적 모순이 있는 데이터를 자동으로 감지하고 처리
+- 🐛 **예측 안정성 향상**: 문제가 있는 데이터를 제외하고 신뢰할 수 있는 예측만 수행
+
 ## [7.1.0] - 2025-08-27
 
 ### Added
