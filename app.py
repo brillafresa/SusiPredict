@@ -37,7 +37,6 @@ def setup_korean_font():
             # 로컬 폰트 파일이 있으면 강제로 설정
             font_prop = FontProperties(fname=font_path)
             plt.rcParams["font.family"] = font_prop.get_name()
-            st.success(f"✅ 로컬 폰트 적용: {font_prop.get_name()}")
             return True
         else:
             # 로컬 폰트가 없으면 시스템 폰트 시도
@@ -47,18 +46,15 @@ def setup_korean_font():
                     found_font = findfont(font_name)
                     if found_font != "DejaVu Sans":
                         plt.rcParams["font.family"] = font_name
-                        st.info(f"ℹ️ 시스템 폰트 사용: {font_name}")
                         return True
                 except Exception:
                     continue
             
             # 모든 폰트 실패 시 기본값
             plt.rcParams["font.family"] = "sans-serif"
-            st.warning("⚠️ 한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.")
             return False
             
     except Exception as e:
-        st.error(f"❌ 폰트 설정 오류: {str(e)}")
         plt.rcParams["font.family"] = "sans-serif"
         return False
 
