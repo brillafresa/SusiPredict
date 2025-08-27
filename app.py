@@ -23,13 +23,47 @@ st.set_page_config(page_title="수시 합격 가능성 예측기", layout="wide"
 
 GRADE_BOUNDS = (1.0, 9.0)
 
-# 한글 폰트 (간단 우선순위)
-for fam in ["Malgun Gothic", "NanumGothic", "AppleGothic", "Noto Sans CJK KR", "sans-serif"]:
+# 한글 폰트 설정 (로컬 폰트 강제 지정)
+import os
+from matplotlib.font_manager import FontProperties, findfont
+
+def setup_korean_font():
+    """한글 폰트를 설정합니다. 로컬 폰트를 우선적으로 사용합니다."""
     try:
-        plt.rcParams["font.family"] = fam
-        break
-    except Exception:
-        continue
+        # 현재 디렉토리의 fonts 폴더에서 NanumGothic.ttf 찾기
+        font_path = os.path.join(os.path.dirname(__file__), "fonts", "NanumGothic.ttf")
+        
+        if os.path.exists(font_path):
+            # 로컬 폰트 파일이 있으면 강제로 설정
+            font_prop = FontProperties(fname=font_path)
+            plt.rcParams["font.family"] = font_prop.get_name()
+            st.success(f"✅ 로컬 폰트 적용: {font_prop.get_name()}")
+            return True
+        else:
+            # 로컬 폰트가 없으면 시스템 폰트 시도
+            font_candidates = ["Malgun Gothic", "NanumGothic", "AppleGothic", "Noto Sans CJK KR", "sans-serif"]
+            for font_name in font_candidates:
+                try:
+                    found_font = findfont(font_name)
+                    if found_font != "DejaVu Sans":
+                        plt.rcParams["font.family"] = font_name
+                        st.info(f"ℹ️ 시스템 폰트 사용: {font_name}")
+                        return True
+                except Exception:
+                    continue
+            
+            # 모든 폰트 실패 시 기본값
+            plt.rcParams["font.family"] = "sans-serif"
+            st.warning("⚠️ 한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.")
+            return False
+            
+    except Exception as e:
+        st.error(f"❌ 폰트 설정 오류: {str(e)}")
+        plt.rcParams["font.family"] = "sans-serif"
+        return False
+
+# 폰트 설정 실행
+setup_korean_font()
 rcParams["axes.unicode_minus"] = False
 
 # 기본 가중치
