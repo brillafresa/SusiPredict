@@ -28,31 +28,32 @@ import os
 from matplotlib.font_manager import FontProperties, findfont
 
 def setup_korean_font():
-    """한글 폰트를 설정합니다. 로컬 폰트를 우선적으로 사용합니다."""
+    """한글 폰트를 설정합니다. 시스템 폰트를 우선적으로 사용합니다."""
     try:
-        # 현재 디렉토리의 fonts 폴더에서 NanumGothic.ttf 찾기
-        font_path = os.path.join(os.path.dirname(__file__), "fonts", "NanumGothic.ttf")
+        # 1순위: 시스템 폰트 시도
+        font_candidates = ["Malgun Gothic", "NanumGothic", "AppleGothic", "Noto Sans CJK KR", "sans-serif"]
+        for font_name in font_candidates:
+            try:
+                found_font = findfont(font_name)
+                if found_font != "DejaVu Sans":
+                    plt.rcParams["font.family"] = font_name
+                    return True
+            except Exception:
+                continue
         
+        # 2순위: 로컬 폰트 시도 (시스템 폰트 실패 시)
+        font_path = os.path.join(os.path.dirname(__file__), "fonts", "NanumGothic.ttf")
         if os.path.exists(font_path):
-            # 로컬 폰트 파일이 있으면 강제로 설정
-            font_prop = FontProperties(fname=font_path)
-            plt.rcParams["font.family"] = font_prop.get_name()
-            return True
-        else:
-            # 로컬 폰트가 없으면 시스템 폰트 시도
-            font_candidates = ["Malgun Gothic", "NanumGothic", "AppleGothic", "Noto Sans CJK KR", "sans-serif"]
-            for font_name in font_candidates:
-                try:
-                    found_font = findfont(font_name)
-                    if found_font != "DejaVu Sans":
-                        plt.rcParams["font.family"] = font_name
-                        return True
-                except Exception:
-                    continue
-            
-            # 모든 폰트 실패 시 기본값
-            plt.rcParams["font.family"] = "sans-serif"
-            return False
+            try:
+                font_prop = FontProperties(fname=font_path)
+                plt.rcParams["font.family"] = font_prop.get_name()
+                return True
+            except Exception:
+                pass
+        
+        # 모든 폰트 실패 시 기본값
+        plt.rcParams["font.family"] = "sans-serif"
+        return False
             
     except Exception as e:
         plt.rcParams["font.family"] = "sans-serif"
@@ -72,8 +73,11 @@ REMOVAL_PRIORITY_LIST = [
     "best", "mean", "p70",
 ]
 
-# ---- 필수 변수 (이 변수들은 절대 제거하지 않음) ----
-ESSENTIAL_VARS = ["median", "final_cut"]
+# ---- 핵심 변수 그룹 (이 그룹 내에서 최소 2개는 유지해야 함) ----
+ESSENTIAL_GROUP_VARS = ["median", "p70", "final_cut", "mean", "best"]
+
+# ---- 유지해야 할 최소 핵심 변수 개수 ----
+MIN_ESSENTIAL_VARS = 2
 
 # 기본 가중치
 BASE_WEIGHTS = {
@@ -313,9 +317,10 @@ def _fit_underlying_from_competitive(row, lo, hi, weights):
         options={"maxiter": 2500}
     )
     a, b = np.exp(res.x)
+    meta = {"M": M, "q_init": q_init, "terms": (q_terms, m_terms, lo, hi, weights)}
     if (not res.success) or _is_bad(a, b):
-        return 3.0, 6.0, res.fun if hasattr(res, "fun") else np.nan, {"M": M, "q_init": q_init, "terms": (q_terms, m_terms, lo, hi, weights)}
-    return float(a), float(b), float(res.fun), {"M": M, "q_init": q_init, "terms": (q_terms, m_terms, lo, hi, weights)}
+        return 3.0, 6.0, res.fun if hasattr(res, "fun") else np.nan, meta
+    return float(a), float(b), float(res.fun), meta
 
 def _fit_admitted_without_ratio(row, lo, hi, weights):
     """경쟁률 정보가 없는 연도: 합격자 분포로 가정하여 피팅(근사)"""
@@ -367,21 +372,19 @@ def fit_per_year_models(df, lo, hi, weights, loss_threshold: float = 2.0):
     """
     cols = [
         "year", "beta_a", "beta_b", "model_type", "fit_loss",
-        "fit_status", "invalidated_cols", # invalidated_col -> invalidated_cols (리스트)
+        "fit_status", "invalidated_cols", "remaining_vars_on_fail", # <-- 새 컬럼 추가
         "q_select", "total_seats", "capacity",
         "fitted_median", "fitted_p70", "fitted_final", "fitted_best", "fitted_final_mean",
-        "fitted_init_best", "fitted_init_worst", "fitted_init_mean",
-        "fitted_app_best", "fitted_app_worst", "fitted_app_mean"
     ]
 
     outs = []
     for _, row in df.iterrows():
         row_dict_original = row.to_dict()
         
-        # --- 반복적 피팅 시작 ---
         current_row_data = row_dict_original.copy()
         invalidated_cols = []
         
+        # --- 반복적 피팅 시작 ---
         while True:
             fit_func = _fit_underlying_from_competitive if pd.notnull(current_row_data.get("q_select")) else _fit_admitted_without_ratio
             a, b, loss, meta = fit_func(current_row_data, lo, hi, weights)
@@ -393,14 +396,23 @@ def fit_per_year_models(df, lo, hi, weights, loss_threshold: float = 2.0):
                 status = 'SUCCESS_AFTER_REMOVAL' if invalidated_cols else 'SUCCESS'
                 break
 
+            # >> 핵심 수정: '최소 변수 개수' 중단 조건 검사 <<
+            essential_vars_present = [var for var in ESSENTIAL_GROUP_VARS if pd.notnull(current_row_data.get(var))]
+            if len(essential_vars_present) <= MIN_ESSENTIAL_VARS:
+                status = 'FAILURE' # 더 이상 제거할 수 없는데도 실패했으므로 최종 실패
+                break
+
             # 제거할 다음 변수 찾기
             next_var_to_remove = None
             for var in REMOVAL_PRIORITY_LIST:
                 if pd.notnull(current_row_data.get(var)):
+                    # 필수 그룹에 속하면서 2개 이하로 남게 될 경우, 제거 대상에서 제외
+                    if var in ESSENTIAL_GROUP_VARS and len(essential_vars_present) <= MIN_ESSENTIAL_VARS:
+                        continue
                     next_var_to_remove = var
                     break
             
-            # 더 이상 제거할 변수가 없으면 루프 탈출
+            # 더 이상 제거할 변수가 없으면(필수 변수만 남았으면) 루프 탈출
             if next_var_to_remove is None:
                 status = 'FAILURE'
                 break
@@ -410,73 +422,49 @@ def fit_per_year_models(df, lo, hi, weights, loss_threshold: float = 2.0):
             invalidated_cols.append(next_var_to_remove)
         # --- 반복적 피팅 종료 ---
 
+        # <<<< 실패 시 남은 변수 목록 저장 >>>>
+        remaining_vars_on_fail = []
+        if status == 'FAILURE':
+            # current_row_data에서 None이 아닌 값들의 키(변수명)만 추출
+            remaining_vars_on_fail = [
+                k for k, v in current_row_data.items() 
+                if pd.notnull(v) and k in COLUMN_ORDER
+            ]
+        # <<<< 여기까지 >>>>
+
         if status == 'FAILURE':
             a, b = np.nan, np.nan # 최종 실패 시 beta 값은 NaN으로 명시
 
         # 결과 계산
         q_sel = float(row.get("q_select", np.nan))
         med, p70, fin, bst, fm = [np.nan] * 5
-        init_b, init_w, im = [np.nan] * 3
-        app_b, app_w, app_m = [np.nan] * 3
         
         if pd.notnull(a): # 피팅이 최종 성공한 경우에만 적합치 계산
             if pd.notnull(q_sel):
                 total = int(row["total_seats"]) if row["total_seats"] else None
-                cap = int(row["capacity"]) if row["capacity"] else None
                 med = _admitted_quantile_from_underlying(0.5, a, b, lo, hi, q_sel)
                 p70 = _admitted_quantile_from_underlying(0.7, a, b, lo, hi, q_sel)
                 fin = _admitted_quantile_from_underlying(1.0, a, b, lo, hi, q_sel)
                 bst = _admitted_quantile_from_underlying(1.0/(total+1.0), a, b, lo, hi, q_sel) if total else np.nan
-                
-                z = _beta_ppf_std(q_sel, a, b)
-                fm = lo + (hi - lo) * _beta_trunc_mean_std(a, b, z)
-                
-                if cap and 'q_init' in meta and meta['q_init']:
-                    q_init = meta['q_init']
-                    init_b = _admitted_quantile_from_underlying(1.0/(cap+1.0), a, b, lo, hi, q_init)
-                    init_w = _admitted_quantile_from_underlying(cap/(cap+1.0), a, b, lo, hi, q_init)
-                    z0 = _beta_ppf_std(q_init, a, b)
-                    im = lo + (hi - lo) * _beta_trunc_mean_std(a, b, z0)
-                
-                if 'M' in meta and meta['M']:
-                    M = meta['M']
-                    app_b = _beta_quantile(1.0/(M+1.0), a, b, lo, hi)
-                    app_w = _beta_quantile(M/(M+1.0), a, b, lo, hi)
-                    app_m = lo + (hi - lo) * (a/(a+b))
+                z = _beta_ppf_std(q_sel, a, b); fm = lo + (hi - lo) * _beta_trunc_mean_std(a, b, z)
             else: # admitted-only 모드
                 N = int(row["total_seats"]) if row["total_seats"] else None
-                cap = int(row["capacity"]) if row["capacity"] else None
                 med = _beta_quantile(0.5, a, b, lo, hi)
                 p70 = _beta_quantile(0.7, a, b, lo, hi)
                 fin = _beta_quantile(N/(N+1.0), a, b, lo, hi) if N else np.nan
                 bst = _beta_quantile(1.0/(N+1.0), a, b, lo, hi) if N else np.nan
                 fm = lo + (hi - lo) * (a/(a+b))
-
-                if cap and N and N > 0:
-                    phi = cap / float(N)
-                    init_b = _beta_quantile((1.0/(cap+1.0)) * phi, a, b, lo, hi)
-                    init_w = _beta_quantile((cap/(cap+1.0)) * phi, a, b, lo, hi)
-                    z_phi = _beta_ppf_std(phi, a, b)
-                    im = lo + (hi - lo) * _beta_trunc_mean_std(a, b, z_phi)
-
-        model_type = "underlying+trunc" if pd.notnull(q_sel) else "admitted-only"
         
         outs.append([
-            row["year"], a, b, model_type, loss, status, invalidated_cols,
+            row["year"], a, b, row_dict_original.get('model_type', 'N/A'), loss, status, 
+            invalidated_cols, remaining_vars_on_fail, # <-- 새 변수 추가
             q_sel, row["total_seats"], row["capacity"],
             med, p70, fin, bst, fm,
-            init_b, init_w, im, app_b, app_w, app_m
         ])
-
-    # 컬럼 이름 맞추기
-    final_cols = [
-        "year","beta_a","beta_b","model_type","fit_loss","fit_status","invalidated_cols",
-        "q_select","total_seats","capacity", "fitted_median","fitted_p70","fitted_final",
-        "fitted_best","fitted_final_mean", "fitted_init_best","fitted_init_worst","fitted_init_mean",
-        "fitted_app_best","fitted_app_worst","fitted_app_mean"
-    ]
+    
+    final_cols = [ "year","beta_a","beta_b","model_type","fit_loss","fit_status","invalidated_cols","remaining_vars_on_fail", "q_select","total_seats","capacity", "fitted_median","fitted_p70","fitted_final", "fitted_best","fitted_final_mean" ]
     df_fit = pd.DataFrame(outs, columns=final_cols)
-    return df_fit.sort_values("year").reset_index(drop=True)
+    return df_fit
 
 # ---- 최근연도 가중 회귀로 1년 후 지표 앵커 예측 ----
 def _predict_with_recency_weighted_average(years: np.ndarray, values: np.ndarray, alpha: float = 0.6) -> float:
@@ -659,8 +647,21 @@ def run_pipeline(
     if not df_fit.empty:
         last_year_status = df_fit.iloc[-1]['fit_status']
         if last_year_status == 'FAILURE':
-            last_year = int(df_fit.iloc[-1]['year'])
-            st.error(f"❌ **예측 실패:** {last_year}학년도 데이터의 내부 일관성이 매우 낮아, 일부 데이터를 보정했음에도 신뢰할 수 있는 예측을 수행할 수 없습니다. 해당 연도의 입력값을 확인하거나, 행을 삭제한 후 다시 시도해 주세요.")
+            last_year_row = df_fit.iloc[-1]
+            last_year = int(last_year_row['year'])
+            
+            # 실패 시점에 남아있던 변수 목록 가져오기
+            remaining_vars = last_year_row['remaining_vars_on_fail']
+            # 한글 변수명으로 변환
+            remaining_vars_kor = [COLUMN_CONFIG.get(var, var) for var in remaining_vars if var in ESSENTIAL_GROUP_VARS]
+            
+            # 더 상세한 에러 메시지 생성
+            error_message = (
+                f"❌ **예측 실패:** {last_year}학년도 데이터의 내부 일관성이 매우 낮습니다.\n\n"
+                f"핵심 지표인 **'{', '.join(remaining_vars_kor)}'**만으로도 통계적으로 일관된 분포를 추정할 수 없었습니다.\n\n"
+                "해당 연도의 입력값을 확인하시거나, '과거 입시 결과' 표에서 해당 행을 삭제한 후 다시 시도해 주세요."
+            )
+            st.error(error_message, icon="❗")
             st.stop()
     
     proj = project_current_year(

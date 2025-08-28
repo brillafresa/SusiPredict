@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.1.0] - 2025-08-28
+
+### Added
+
+- 🆕 **'반복적 자가 회복' 메커니즘**: 의미론적 중요도 기반 변수 제거로 안정성 극대화
+  - **의미론적 중요도 기반 변수 제거**: 수학적 오류가 아닌 입시 데이터의 특성을 이해하는 방식으로 변수 제거 우선순위 결정
+  - **반복적 재시도**: 성공하거나 더 이상 제거할 수 없을 때까지 반복적으로 피팅 시도
+  - **상세한 실패 진단**: 최종 실패 시 어떤 핵심 변수들이 남아있었는지 구체적으로 보고
+  - **투명한 데이터 보정**: 어떤 변수가 제거되었는지 사용자에게 명확하게 알림
+- 🆕 **폰트 설정 우선순위 변경**: 시스템 폰트를 우선적으로 사용하여 성능 향상
+  - **시스템 폰트 우선**: 사용자 시스템에 설치된 한글 폰트를 우선적으로 사용
+  - **로컬 폰트 폴백**: 시스템 폰트 실패 시 `fonts/NanumGothic.ttf` 폰트로 자동 전환
+
+### Changed
+
+- 🔄 **핵심 함수 개선**:
+  - `fit_per_year_models` 함수 전면 재작성: 반복적 자가 회복 로직 구현
+  - `run_pipeline` 함수 강화: 상세한 실패 진단 및 에러 메시지 개선
+  - `setup_korean_font` 함수 수정: 시스템 폰트 우선 사용으로 변경
+
+### Technical Details
+
+- **변수 제거 우선순위**: `REMOVAL_PRIORITY_LIST`로 지원자 데이터(3순위) → 최초합격자 데이터(2순위) → 최종등록자 데이터(1순위) 순서
+- **핵심 변수 그룹**: `ESSENTIAL_GROUP_VARS` 내에서 최소 2개만 유지하면 계속 시도
+- **실패 진단 정보**: `remaining_vars_on_fail` 컬럼으로 실패 시점의 남은 변수들 추적
+- **상태 관리**: `SUCCESS`, `SUCCESS_AFTER_REMOVAL`, `FAILURE` 상태로 피팅 결과 분류
+
+### Fixed
+
+- 🐛 **모델 범용성 향상**: `final_cut`이나 `median`이 없어도 `mean`과 `p70`만으로 분석 가능
+- 🐛 **사용자 경험 개선**: 피팅 실패 시 구체적인 문제 진단 정보 제공
+
+## [9.0.0] - 2025-08-28
+
+### Added
+
+- 🆕 **'유연한 중단 규칙' 메커니즘**: 고정된 필수 변수 목록 대신 유연한 규칙을 적용하여 모델의 범용성을 높임
+  - **기존 방식**: `ESSENTIAL_VARS` 고정 목록에 의존하여 `final_cut`이나 `median`이 없으면 분석 불가
+  - **새로운 방식**: `ESSENTIAL_GROUP_VARS` 내에서 **최소 2개만 유지**하면 계속 시도
+  - **모델 범용성 향상**: `final_cut` 없이 `mean` + `p70`만 있어도 분석 가능
+
+### Changed
+
+- 🔄 **전역 설정 개선**:
+  - `ESSENTIAL_VARS` → `ESSENTIAL_GROUP_VARS` + `MIN_ESSENTIAL_VARS`로 변경
+  - 핵심 변수 그룹 내에서 최소 2개만 유지하면 계속 시도하는 유연한 규칙 적용
+
+### Technical Details
+
+- **핵심 변수 그룹**: `["median", "p70", "final_cut", "mean", "best"]`
+- **최소 유지 개수**: `MIN_ESSENTIAL_VARS = 2`
+- **지능적 변수 제거**: 핵심 변수가 2개 이하로 남으면 제거 대상에서 자동 제외
+
+### Fixed
+
+- 🐛 **모델 범용성 문제 해결**: 일부 대학처럼 `최종컷`이나 `50%컷(median)`을 공개하지 않는 경우에도 분석 가능
+
 ## [8.0.0] - 2025-08-27
 
 ### Added
@@ -229,17 +286,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **🆕 자동 추정 로직**: ratio 미입력 시 과거 중앙값, extra 미입력 시 과거 추가충원율 패턴
 - **🆕 피팅 모드 분기**: q_select 유무에 따른 underlying+truncation vs admitted-only 자동 선택
 - **🆕 부분적 데이터 처리**: 최소 필수값(정원, 과거 컷)만으로도 예측 파이프라인 실행
-
-## [6.1.0] - 2024-12-01
-
-### Added
-
-- 초기 프로토타입 개발
-- 기본 수학적 모델링 로직
-
-## [6.0.0] - 2024-11-15
-
-### Added
-
-- 프로젝트 초기 설정
-- 기본 아키텍처 설계
