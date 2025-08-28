@@ -13,17 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **보정 정보 반환**: `_winsorize_series` 함수가 보정된 값의 인덱스 리스트를 함께 반환
   - **연도 정보 전달**: `project_current_year`에서 보정된 연도 정보를 `winsorized_years`로 전달
   - **통합 알림 시스템**: 기존 '데이터 일관성 문제 해결' 알림과 함께 '예측 안정성 확보' 알림을 통합 표시
+- 🆕 **한글 폰트 관리 시스템 통합**: 환경 의존적인 폰트 설정을 우선순위 체인 기반으로 통합
+  - **통합 폰트 관리**: `font_setup.py`로 모든 환경에서 일관된 폰트 설정
+  - **우선순위 체인**: OS별 시스템 폰트와 동봉 폰트를 우선순위에 따라 자동 선택
+  - **환경 독립성**: `findfont` 비교 로직 제거로 환경별 분기 없이 안정적 동작
 
 ### Changed
 
 - 🔄 **`_winsorize_series` 함수 시그니처 변경**: `tuple[pd.Series, list]` 반환으로 보정 정보 제공
 - 🔄 **데이터 자동 보정 알림 개선**: 부분 무효화와 이상치 보정 정보를 체계적으로 분류하여 표시
+- 🔄 **폰트 설정 시스템 전면 교체**: 복잡한 환경 의존 로직을 단순하고 강건한 우선순위 체인으로 교체
 
 ### Technical Details
 
 - **함수 반환값 변경**: `(보정된 시리즈, 보정된 값의 인덱스 리스트)` 튜플 반환
 - **보정 연도 추적**: `winsorized_years` 딕셔너리로 beta_a, beta_b 각각의 보정 연도 기록
 - **알림 메시지 구조화**: 데이터 일관성 문제와 예측 안정성 문제를 구분하여 명확한 설명 제공
+- **폰트 관리 통합**: `font_setup.py`로 동봉 폰트 등록, OS별 후보 관리, 우선순위 체인 구성
+- **환경 독립성**: Windows(Malgun Gothic), macOS(AppleGothic), Linux(Noto/Nanum) 자동 감지 및 적용
 
 ## [11.0.0] - 2025-08-28
 

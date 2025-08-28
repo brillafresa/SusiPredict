@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # app.py
 # 🎓 수시 합격 가능성 예측기 (Streamlit)
-# v11.1 — 사용자 투명성 향상 + MAD 기반 이상치 보정 + Causal Forecasting (Predicting DNA, not outcomes)
+# v11.1 — 사용자 투명성 향상 + MAD 기반 이상치 보정 + Causal Forecasting (Predicting DNA, not outcomes) + 통합 폰트 관리
 
 import numpy as np
 import pandas as pd
@@ -23,45 +23,11 @@ st.set_page_config(page_title="수시 합격 가능성 예측기", layout="wide"
 
 GRADE_BOUNDS = (1.0, 9.0)
 
-# 한글 폰트 설정 (로컬 폰트 강제 지정)
-import os
-from matplotlib.font_manager import FontProperties, findfont
-
-def setup_korean_font():
-    """한글 폰트를 설정합니다. 시스템 폰트를 우선적으로 사용합니다."""
-    try:
-        # 1순위: 시스템 폰트 시도
-        font_candidates = ["Malgun Gothic", "NanumGothic", "AppleGothic", "Noto Sans CJK KR", "sans-serif"]
-        for font_name in font_candidates:
-            try:
-                found_font = findfont(font_name)
-                if found_font != "DejaVu Sans":
-                    plt.rcParams["font.family"] = font_name
-                    return True
-            except Exception:
-                continue
-        
-        # 2순위: 로컬 폰트 시도 (시스템 폰트 실패 시)
-        font_path = os.path.join(os.path.dirname(__file__), "fonts", "NanumGothic.ttf")
-        if os.path.exists(font_path):
-            try:
-                font_prop = FontProperties(fname=font_path)
-                plt.rcParams["font.family"] = font_prop.get_name()
-                return True
-            except Exception:
-                pass
-        
-        # 모든 폰트 실패 시 기본값
-        plt.rcParams["font.family"] = "sans-serif"
-        return False
-            
-    except Exception as e:
-        plt.rcParams["font.family"] = "sans-serif"
-        return False
+# 한글 폰트 설정 (통합 관리)
+from font_setup import setup_korean_fonts
 
 # 폰트 설정 실행
-setup_korean_font()
-rcParams["axes.unicode_minus"] = False
+setup_korean_fonts(prefer_local_first=True)
 
 # ---- 변수 중요도 순위 (제거 우선순위: 위에서 아래로) ----
 REMOVAL_PRIORITY_LIST = [
@@ -958,6 +924,22 @@ def run_pipeline(
     all_notes = recovery_notes + winsorize_notes
     if all_notes:
         st.warning("⚠️ **데이터 자동 보정 알림**\n\n" + "\n".join(all_notes))
+
+    # 한글 폰트 테스트 플롯 (폰트 설정 확인용)
+    if debug:
+        st.markdown("### 🔤 한글 폰트 테스트")
+        try:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.plot([0, 1, 2], [0, -1, 2])
+            ax.set_title("한글 제목: 수익률 변화")
+            ax.set_xlabel("시간(일)")
+            ax.set_ylabel("수익률(%)")  # 음수 기호 확인
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+            plt.close(fig)
+            st.success("✅ 한글 폰트가 정상적으로 표시됩니다.")
+        except Exception as e:
+            st.error(f"❌ 폰트 테스트 실패: {e}")
 
 # ===================== 상단 타이틀/사이드바 =====================
 st.title("🎓 수시 합격 가능성 예측기")
