@@ -62,6 +62,19 @@ def setup_korean_font():
 setup_korean_font()
 rcParams["axes.unicode_minus"] = False
 
+# ---- 변수 중요도 순위 (제거 우선순위: 위에서 아래로) ----
+REMOVAL_PRIORITY_LIST = [
+    # 3순위: 지원자 데이터 (불확실성 가장 높음)
+    "app_worst", "app_best", "app_mean",
+    # 2순위: 최초합격자 데이터 (등록 포기 변수 존재)
+    "init_worst", "init_best", "init_mean",
+    # 1순위: 최종등록자 데이터 (신뢰도 높음)
+    "best", "mean", "p70",
+]
+
+# ---- 필수 변수 (이 변수들은 절대 제거하지 않음) ----
+ESSENTIAL_VARS = ["median", "final_cut"]
+
 # 기본 가중치
 BASE_WEIGHTS = {
     "final_cut": 10.0, "best": 5.0, "median": 5.0, "mean": 4.0, "p70": 3.0,
@@ -350,46 +363,57 @@ def _fit_admitted_without_ratio(row, lo, hi, weights):
 
 def fit_per_year_models(df, lo, hi, weights, loss_threshold: float = 2.0):
     """연도별 (a,b) 피팅 + 주요 지표의 적합치 계산
-    [v8.0] 2단계 오류 처리: '나쁜 적합'과 '완전한 실패'를 구분하여 지능적으로 대처
+    [v9.0] 반복적 자가 회복: 의미론적 중요도 기반 변수 제거로 안정성 극대화
     """
-    cols = [ "year","beta_a","beta_b","model_type","fit_loss","fit_status","invalidated_col","q_select","total_seats","capacity", "fitted_median","fitted_p70","fitted_final","fitted_best","fitted_final_mean", "fitted_init_best","fitted_init_worst","fitted_init_mean", "fitted_app_best","fitted_app_worst","fitted_app_mean" ]
+    cols = [
+        "year", "beta_a", "beta_b", "model_type", "fit_loss",
+        "fit_status", "invalidated_cols", # invalidated_col -> invalidated_cols (리스트)
+        "q_select", "total_seats", "capacity",
+        "fitted_median", "fitted_p70", "fitted_final", "fitted_best", "fitted_final_mean",
+        "fitted_init_best", "fitted_init_worst", "fitted_init_mean",
+        "fitted_app_best", "fitted_app_worst", "fitted_app_mean"
+    ]
+
     outs = []
-
     for _, row in df.iterrows():
-        row_dict = row.to_dict()
-        fit_func = _fit_underlying_from_competitive if pd.notnull(row["q_select"]) else _fit_admitted_without_ratio
+        row_dict_original = row.to_dict()
+        
+        # --- 반복적 피팅 시작 ---
+        current_row_data = row_dict_original.copy()
+        invalidated_cols = []
+        
+        while True:
+            fit_func = _fit_underlying_from_competitive if pd.notnull(current_row_data.get("q_select")) else _fit_admitted_without_ratio
+            a, b, loss, meta = fit_func(current_row_data, lo, hi, weights)
+            is_hard_failure = (a == 3.0 and b == 6.0)
+            is_poor_fit = loss > loss_threshold
 
-        # 1. 1차 피팅 시도
-        a, b, loss, meta = fit_func(row_dict, lo, hi, weights)
-        status, invalidated = 'SUCCESS', None
-        is_hard_failure = (a == 3.0 and b == 6.0) # 최적화기가 해를 못 찾은 명백한 실패
+            # 피팅 성공 시 루프 탈출
+            if not is_hard_failure and not is_poor_fit:
+                status = 'SUCCESS_AFTER_REMOVAL' if invalidated_cols else 'SUCCESS'
+                break
 
-        # 2. '나쁜 적합' 또는 '완전한 실패' 시 재시도
-        if is_hard_failure or loss > loss_threshold:
-            loss_details = {}
-            if pd.notnull(row["q_select"]) and 'terms' in meta:
-                _, loss_details = _objective_function(np.log([a, b]), *meta['terms'], return_details=True)
-
-            if loss_details:
-                worst_offender = max(loss_details, key=loss_details.get, default=None)
-                if worst_offender:
-                    row_retry = row_dict.copy()
-                    row_retry[worst_offender] = None
-                    invalidated = worst_offender
-                    
-                    # 2차 피팅 시도
-                    a, b, loss, meta = fit_func(row_retry, lo, hi, weights)
-                    is_hard_failure_after_retry = (a == 3.0 and b == 6.0)
-                    status = 'FAILURE' if is_hard_failure_after_retry else 'RETRY_SUCCESS'
-                else: # 오차 유발 항목 특정 불가
-                    status = 'FAILURE' if is_hard_failure else 'POOR_FIT_UNRESOLVED'
-            else: # 경쟁률 없는 모드이거나 상세 오차 계산 불가
-                status = 'FAILURE' if is_hard_failure else 'POOR_FIT'
+            # 제거할 다음 변수 찾기
+            next_var_to_remove = None
+            for var in REMOVAL_PRIORITY_LIST:
+                if pd.notnull(current_row_data.get(var)):
+                    next_var_to_remove = var
+                    break
+            
+            # 더 이상 제거할 변수가 없으면 루프 탈출
+            if next_var_to_remove is None:
+                status = 'FAILURE'
+                break
+            
+            # 변수 제거 및 재시도 준비
+            current_row_data[next_var_to_remove] = None
+            invalidated_cols.append(next_var_to_remove)
+        # --- 반복적 피팅 종료 ---
 
         if status == 'FAILURE':
             a, b = np.nan, np.nan # 최종 실패 시 beta 값은 NaN으로 명시
 
-        # 결과 계산 (피팅 성공/실패 여부와 관계없이)
+        # 결과 계산
         q_sel = float(row.get("q_select", np.nan))
         med, p70, fin, bst, fm = [np.nan] * 5
         init_b, init_w, im = [np.nan] * 3
@@ -438,13 +462,21 @@ def fit_per_year_models(df, lo, hi, weights, loss_threshold: float = 2.0):
         model_type = "underlying+trunc" if pd.notnull(q_sel) else "admitted-only"
         
         outs.append([
-            row["year"], a, b, model_type, loss, status, invalidated,
+            row["year"], a, b, model_type, loss, status, invalidated_cols,
             q_sel, row["total_seats"], row["capacity"],
             med, p70, fin, bst, fm,
             init_b, init_w, im, app_b, app_w, app_m
         ])
 
-    return pd.DataFrame(outs, columns=cols).sort_values("year").reset_index(drop=True)
+    # 컬럼 이름 맞추기
+    final_cols = [
+        "year","beta_a","beta_b","model_type","fit_loss","fit_status","invalidated_cols",
+        "q_select","total_seats","capacity", "fitted_median","fitted_p70","fitted_final",
+        "fitted_best","fitted_final_mean", "fitted_init_best","fitted_init_worst","fitted_init_mean",
+        "fitted_app_best","fitted_app_worst","fitted_app_mean"
+    ]
+    df_fit = pd.DataFrame(outs, columns=final_cols)
+    return df_fit.sort_values("year").reset_index(drop=True)
 
 # ---- 최근연도 가중 회귀로 1년 후 지표 앵커 예측 ----
 def _predict_with_recency_weighted_average(years: np.ndarray, values: np.ndarray, alpha: float = 0.6) -> float:
@@ -628,7 +660,7 @@ def run_pipeline(
         last_year_status = df_fit.iloc[-1]['fit_status']
         if last_year_status == 'FAILURE':
             last_year = int(df_fit.iloc[-1]['year'])
-            st.error(f"❌ **예측 실패:** {last_year}학년도 데이터의 내부 일관성이 낮아 신뢰할 수 있는 예측을 수행할 수 없습니다. 해당 연도의 입력값을 확인하거나, '과거 입시 결과' 표에서 해당 행을 삭제한 후 다시 시도해 주세요.")
+            st.error(f"❌ **예측 실패:** {last_year}학년도 데이터의 내부 일관성이 매우 낮아, 일부 데이터를 보정했음에도 신뢰할 수 있는 예측을 수행할 수 없습니다. 해당 연도의 입력값을 확인하거나, 행을 삭제한 후 다시 시도해 주세요.")
             st.stop()
     
     proj = project_current_year(
@@ -851,19 +883,16 @@ def run_pipeline(
     elif sim.get("mode") == "underfilled":
         st.info("지원자가 정원에 못 미치는 **미달 시나리오(underfilled)**로 간주하여 컷이 상단으로 수렴하는 폴백을 적용했습니다.")
 
-    # 재시도 성공 정보 추가
-    retry_success_df = df_fit[df_fit['fit_status'] == 'RETRY_SUCCESS']
-    if not retry_success_df.empty:
-        retry_notes = []
-        for _, row in retry_success_df.iterrows():
-            col_kor = {
-                'median': '중위수', 'p70': '70%', 'final_cut': '최종컷', 'best': '최고점',
-                'init_best': '최초합 최고점', 'init_worst': '최초합 최저점', 'init_mean': '최초합 평균',
-                'app_best': '지원자 최고점', 'app_worst': '지원자 최저점', 'app_mean': '지원자 평균'
-            }.get(row['invalidated_col'], row['invalidated_col'])
-            retry_notes.append(f"{int(row['year'])}학년도의 '{col_kor}'")
+    # 재시도 성공 정보 추가 (기존 코드를 아래 코드로 교체)
+    recovery_success_df = df_fit[df_fit['fit_status'] == 'SUCCESS_AFTER_REMOVAL']
+    if not recovery_success_df.empty:
+        recovery_notes = []
+        for _, row in recovery_success_df.iterrows():
+            # COLUMN_CONFIG를 사용해 한글 변수명으로 변환
+            removed_vars_kor = [COLUMN_CONFIG.get(var, var) for var in row['invalidated_cols']]
+            recovery_notes.append(f"{int(row['year'])}학년도('{', '.join(removed_vars_kor)}')")
         
-        st.warning(f"⚠️ **데이터 보정 알림:** 일부 연도 데이터의 일관성이 낮아 다음 항목을 제외하고 분석했습니다: {', '.join(retry_notes)}")
+        st.warning(f"⚠️ **데이터 자동 보정 알림:** 일부 연도 데이터의 일관성이 낮아 다음 항목을 제외하고 분석했습니다: {', '.join(recovery_notes)}")
 
 # ===================== 상단 타이틀/사이드바 =====================
 st.title("🎓 수시 합격 가능성 예측기")
