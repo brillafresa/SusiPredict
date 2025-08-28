@@ -15,8 +15,8 @@
 
 ### 🔄 자동 추정 로직
 
-- **경쟁률 미입력 시**: `ratio = median(과거_경쟁률_데이터)`
-- **추가충원 미입력 시**: `extra = capacity × median(과거_추가충원율)`
+- **경쟁률 미입력 시**: `ratio = median(과거_경쟁률_데이터)` (과거 중앙값)
+- **추가충원 미입력 시**: `extra = capacity × _get_stochastic_forecast(과거_추가충원율_시계열)` (최근 가중 평균 + 변동성 반영)
 
 ### 🆕 v8.0 '2단계 오류 처리' 메커니즘
 
@@ -42,11 +42,14 @@
 - **새로운 방식**: 지원자 분포의 'DNA'(Beta(a,b) 모수)를 직접 예측
 - **예측 대상**: `beta_a`, `beta_b` 시계열 추세를 각각 예측
 - **모델 타입**: `causal_forecast` (기존 `underlying+truncation` 대체)
+- **🆕 v8.0 확장**: 2단계 오류 처리로 예측 안정성 대폭 향상
 
 ### 피팅 모드 자동 선택
 
 - **경쟁률 있음**: `underlying + truncation` (전체 지원자 분포 역추정)
 - **경쟁률 없음**: `admitted-only` (합격자 분포만으로 근사)
+
+**최종 예측 모델**: `causal_forecast` (지원자 분포 DNA 직접 예측)
 
 ### 선발 비율 계산
 
@@ -194,9 +197,10 @@ streamlit run app.py
 #### ⚡ 자동 추정 시스템
 
 - **경쟁률 미입력**: 과거 데이터의 중앙값 사용
-- **추가충원 미입력**: 과거 추가충원율 패턴으로 추정
+- **추가충원 미입력**: `_get_stochastic_forecast()`를 통한 최근 가중 평균 + 변동성 반영
 - **지원자 분포**: 최고/평균/최저 중 일부만 있어도 Beta 분포 피팅
 - **피팅 모드**: 데이터 상황에 따라 자동으로 최적 모드 선택
+- **최종 예측**: `causal_forecast` 모델로 지원자 분포 DNA 직접 예측
 
 #### 💡 예측 품질 향상 팁
 
@@ -210,14 +214,17 @@ streamlit run app.py
 사이드바의 "디버그 모드 (중간값 출력)" 체크 시 다음 정보가 노출됩니다:
 
 1. **전처리 요약**: year, capacity, extra, ratio(raw/effective), N, q_select, M
-2. **피팅 요약**: 각 연도의 beta(a,b), fitted*\*와 anchor*\* 비교
-3. **올해 파라미터**: a,b, q_select_this, N, M, ratio_this
+2. **피팅 요약**: 각 연도의 beta(a,b), model_type, fit_status, invalidated_col, fitted\*\* 값들
+3. **올해 파라미터**: a,b, model_type, q_select_this, N, M, ratio_this
 4. **컷 샘플/분위수**: g80/g50/g20과 컷 샘플 10개
+5. **🆕 v8.0 피팅 상태**: SUCCESS/RETRY_SUCCESS/FAILURE 상태 및 무효화된 컬럼 정보
 
 ### 🔍 부분적 데이터 입력 시 확인 포인트
 
 - **자동 추정된 값들**: ratio_this, extra_this 등이 과거 중앙값으로 설정되었는지 확인
 - **피팅 모드**: `underlying+truncation` vs `admitted-only` 중 어떤 모드가 선택되었는지 확인
+- **최종 예측 모델**: `causal_forecast` (지원자 분포 DNA 직접 예측)
+- **🆕 v8.0 피팅 상태**: SUCCESS/RETRY_SUCCESS/FAILURE 상태 및 데이터 보정 정보 확인
 - **추정 품질**: 과거 데이터가 충분한지, 극단값이 있는지 확인
 
 ### 🆕 명시적 입력 상태 제어 시스템
@@ -373,7 +380,7 @@ pytest tests/
 ## 📈 버전 정책
 
 - **Semantic Versioning** 사용
-- 현재 버전: `v7.1.0`
+- 현재 버전: `v8.0.0`
 - 주요 변경사항은 `CHANGELOG.md`에 기록
 
 ## 📄 라이선스
