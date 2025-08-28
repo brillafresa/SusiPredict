@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # app.py
 # 🎓 수시 합격 가능성 예측기 (Streamlit)
-# v7.0 — Causal Forecasting (Predicting DNA, not outcomes)
+# v11.1 — 사용자 투명성 향상 + MAD 기반 이상치 보정 + Causal Forecasting (Predicting DNA, not outcomes)
 
 import numpy as np
 import pandas as pd
@@ -148,6 +148,44 @@ def _reset_value_on_uncheck(checkbox_key: str, value_key: str, default_value):
     """체크박스가 해제되었을 때 해당 값 필드를 기본값으로 리셋합니다."""
     if not st.session_state.get(checkbox_key, False):
         st.session_state[value_key] = default_value
+
+def _winsorize_series(series: pd.Series, threshold: float = 2.5) -> tuple[pd.Series, list]:
+    """
+    MAD(Median Absolute Deviation)를 이용하여 시리즈의 극단적 이상치를 보정합니다.
+    반환값: (보정된 시리즈, 보정된 값의 인덱스 리스트)
+    """
+    if len(series) < 3: # MAD를 의미있게 계산하려면 최소 3개의 데이터 필요
+        return series, []
+    
+    median = series.median()
+    
+    # MAD가 0인 경우 (예: [5, 5, 5]) 변동성이 없으므로 이상치도 없음
+    if pd.isna(median):
+        return series, [] # 모든 값이 NaN인 경우
+    
+    mad = (series - median).abs().median()
+    if mad == 0:
+        return series, [] # 수정 Z-점수(Modified Z-score) 계산
+    
+    modified_z_scores = 0.6745 * (series - median).abs() / mad
+    
+    # 이상치 판별
+    outlier_mask = modified_z_scores > threshold
+    
+    # 이상치가 없으면 원본 반환
+    if not outlier_mask.any():
+        return series, []
+    
+    # 이상치를 보정
+    corrected_series = series.copy()
+    # 이상치를 -> '정상 데이터들의 중앙값'으로 교체
+    non_outlier_median = series[~outlier_mask].median()
+    corrected_series[outlier_mask] = non_outlier_median
+    
+    # 보정된 값의 인덱스를 찾아 리스트로 반환
+    corrected_indices = series.index[outlier_mask].tolist()
+    
+    return corrected_series, corrected_indices
 
 def _solve_beta_two_quantiles(q1: QuantileTerm, q2: QuantileTerm, lo, hi, init_ab=(3.0, 6.0)):
     def objective(v):
@@ -506,8 +544,18 @@ def project_current_year(
     s_a = successful_fits[['year', 'beta_a']].dropna()
     s_b = successful_fits[['year', 'beta_b']].dropna()
     
-    a_proj = _predict_with_recency_weighted_average(s_a["year"].values, s_a["beta_a"].values, alpha=0.6)
-    b_proj = _predict_with_recency_weighted_average(s_b["year"].values, s_b["beta_b"].values, alpha=0.6)
+    # 1-2. 'DNA' 데이터 이상치 보정 및 보정된 연도 기록
+    s_a_series, a_corrected_indices = _winsorize_series(s_a['beta_a'])
+    s_b_series, b_corrected_indices = _winsorize_series(s_b['beta_b'])
+    
+    winsorized_years = {
+        "beta_a": s_a.loc[a_corrected_indices, 'year'].tolist(),
+        "beta_b": s_b.loc[b_corrected_indices, 'year'].tolist()
+    }
+    
+    # 2. 'DNA'의 미래 예측 (보정된 데이터 사용)
+    a_proj = _predict_with_recency_weighted_average(s_a["year"].values, s_a_series.values, alpha=0.6)
+    b_proj = _predict_with_recency_weighted_average(s_b["year"].values, s_b_series.values, alpha=0.6)
 
     # 예측 실패 시 가장 최근 값으로 폴백
     if pd.isna(a_proj) or pd.isna(b_proj):
@@ -537,7 +585,8 @@ def project_current_year(
         "model_type": "causal_forecast",
         "q_select_this": q_sel,
         "total_seats_this": total_seats_base, "capacity_this": cap,
-        "ratio_this": ratio, "M_this": M, "q_init_this": q_init
+        "ratio_this": ratio, "M_this": M, "q_init_this": q_init,
+        "winsorized_years": winsorized_years
     }
 
 # ===================== 시뮬레이션 =====================
@@ -884,16 +933,31 @@ def run_pipeline(
     elif sim.get("mode") == "underfilled":
         st.info("지원자가 정원에 못 미치는 **미달 시나리오(underfilled)**로 간주하여 컷이 상단으로 수렴하는 폴백을 적용했습니다.")
 
-    # 재시도 성공 정보 추가 (기존 코드를 아래 코드로 교체)
+    # --- 데이터 자동 보정 알림 생성 ---
+    # 1. '부분 무효화' 알림 노트 생성
+    recovery_notes = []
     recovery_success_df = df_fit[df_fit['fit_status'] == 'SUCCESS_AFTER_REMOVAL']
     if not recovery_success_df.empty:
-        recovery_notes = []
+        notes = []
         for _, row in recovery_success_df.iterrows():
-            # COLUMN_CONFIG를 사용해 한글 변수명으로 변환
             removed_vars_kor = [COLUMN_CONFIG.get(var, var) for var in row['invalidated_cols']]
-            recovery_notes.append(f"{int(row['year'])}학년도('{', '.join(removed_vars_kor)}')")
-        
-        st.warning(f"⚠️ **데이터 자동 보정 알림:** 일부 연도 데이터의 일관성이 낮아 다음 항목을 제외하고 분석했습니다: {', '.join(recovery_notes)}")
+            notes.append(f"{int(row['year'])}학년도('{', '.join(removed_vars_kor)}')")
+        if notes:
+            recovery_notes.append(f"• **데이터 일관성 문제 해결:** {', '.join(notes)} 항목을 제외하고 분석을 재시도했습니다.")
+
+    # 2. '이상치 보정' 알림 노트 생성
+    winsorize_notes = []
+    winsorized_years = proj.get("winsorized_years", {})
+    all_corrected_years = sorted(list(set(winsorized_years.get("beta_a", []) + winsorized_years.get("beta_b", []))))
+
+    if all_corrected_years:
+        note_str = ", ".join([f"{int(y)}학년도" for y in all_corrected_years])
+        winsorize_notes.append(f"• **예측 안정성 확보:** {note_str}의 극단적인 값을 보정하여 추세를 분석했습니다.")
+
+    # 3. 모든 알림을 종합하여 표시
+    all_notes = recovery_notes + winsorize_notes
+    if all_notes:
+        st.warning("⚠️ **데이터 자동 보정 알림**\n\n" + "\n".join(all_notes))
 
 # ===================== 상단 타이틀/사이드바 =====================
 st.title("🎓 수시 합격 가능성 예측기")

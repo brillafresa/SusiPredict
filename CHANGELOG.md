@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.1.0] - 2025-08-28
+
+### Added
+
+- 🆕 **사용자 투명성 향상**: 이상치 보정이 발생했을 때 어떤 연도의 데이터가 보정되었는지를 명확하게 알림
+  - **보정 정보 반환**: `_winsorize_series` 함수가 보정된 값의 인덱스 리스트를 함께 반환
+  - **연도 정보 전달**: `project_current_year`에서 보정된 연도 정보를 `winsorized_years`로 전달
+  - **통합 알림 시스템**: 기존 '데이터 일관성 문제 해결' 알림과 함께 '예측 안정성 확보' 알림을 통합 표시
+
+### Changed
+
+- 🔄 **`_winsorize_series` 함수 시그니처 변경**: `tuple[pd.Series, list]` 반환으로 보정 정보 제공
+- 🔄 **데이터 자동 보정 알림 개선**: 부분 무효화와 이상치 보정 정보를 체계적으로 분류하여 표시
+
+### Technical Details
+
+- **함수 반환값 변경**: `(보정된 시리즈, 보정된 값의 인덱스 리스트)` 튜플 반환
+- **보정 연도 추적**: `winsorized_years` 딕셔너리로 beta_a, beta_b 각각의 보정 연도 기록
+- **알림 메시지 구조화**: 데이터 일관성 문제와 예측 안정성 문제를 구분하여 명확한 설명 제공
+
+## [11.0.0] - 2025-08-28
+
+### Changed
+
+- 🔄 **이상치 보정 알고리즘 전면 교체**: 분위수 기반 Winsorization에서 MAD(Median Absolute Deviation) 기반 알고리즘으로 변경
+  - **MAD 기반 이상치 탐지**: Modified Z-score를 사용하여 더 강건한 이상치 탐지
+  - **적은 데이터에 강함**: 3~5개 샘플에서도 안정적으로 이상치 탐지 및 보정
+  - **이상치에 둔감**: 중앙값 기반 계산으로 탐지하려는 이상치 자체의 영향을 최소화
+
+### Technical Details
+
+- **새로운 `_winsorize_series` 함수**: 임계값 2.5를 기준으로 Modified Z-score 계산
+- **이상치 교체 방식**: 극단값을 정상 데이터의 중앙값으로 자동 치환
+- **최소 데이터 요구사항**: MAD 계산을 위해 최소 3개 데이터 필요
+- **적용 시점**: `_predict_with_recency_weighted_average` 호출 직전에 데이터 정제 수행
+
+### Fixed
+
+- 🐛 **v10.0의 결정적 결함 해결**: 3개년 데이터에서도 이상치 보정이 동작하지 않던 문제 완전 해결
+- 🐛 **예측 왜곡 문제 근본 해결**: 극단적인 beta_a, beta_b 값으로 인한 비현실적인 예측 결과 방지
+- 🐛 **모델 안정성 극대화**: 이상치가 포함된 데이터로도 일관되고 신뢰할 수 있는 예측 생성
+
+## [10.0.0] - 2025-08-28
+
+### Added
+
+- 🆕 **'이상치 보정(Winsorization)' 시스템**: DNA(beta_a, beta_b) 예측 전 극단적인 이상치를 자동으로 감지하고 보정하여 모델의 안정성 향상
+  - **윈저화 기법 적용**: 상위/하위 분위수(10%, 90%)를 기준으로 극단값을 경계값으로 치환
+  - **자동 이상치 감지**: 데이터가 4개 이상일 때만 이상치 보정 수행 (3개 이하는 원본 반환)
+  - **예측 안정성 향상**: 이상치로 인한 예측 왜곡 방지로 더 상식적이고 신뢰할 수 있는 결과 생성
+
+### Changed
+
+- 🔄 **예측 로직 강화**: `project_current_year` 함수에서 beta_a, beta_b 예측 전 이상치 보정 단계 추가
+- 🔄 **데이터 품질 관리**: 피팅된 DNA 데이터의 품질을 자동으로 검증하고 보정하는 전처리 단계 도입
+
+### Technical Details
+
+- **새로운 유틸리티 함수**: `_winsorize_series()` - pandas Series의 극단값을 분위수 기반으로 보정
+- **보정 기준**: 하위 10% 분위수 이하와 상위 90% 분위수 이상을 각각의 경계값으로 치환
+- **적용 시점**: `_predict_with_recency_weighted_average` 호출 직전에 데이터 정제 수행
+- **안전장치**: 데이터 개수가 3개 이하일 경우 이상치 보정을 건너뛰어 안전성 보장
+
+### Fixed
+
+- 🐛 **예측 왜곡 문제 해결**: 극단적인 beta_a, beta_b 값으로 인한 비현실적인 예측 결과 방지
+- 🐛 **모델 안정성 향상**: 이상치가 포함된 데이터로도 일관되고 신뢰할 수 있는 예측 생성
+
 ## [9.1.0] - 2025-08-28
 
 ### Added
